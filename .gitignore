@@ -2,7 +2,7 @@
 .idea
 logs
 *.zip
-
+runs/*
 renew.sh
 tmux_renew.sh
 data/

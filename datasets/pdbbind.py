@@ -68,6 +68,7 @@ class PDBBind(Dataset):
                  random_rec_atom_subgraph_radius=10,
                  geometry_regularization_ring=False,
                  num_confs=10,
+                 normalized_radius=1.0,
                  transform=None, **kwargs):
         # subset name is either 'pdbbind_filtered' or 'casf_test'
         self.chain_radius = chain_radius
@@ -110,8 +111,22 @@ class PDBBind(Dataset):
         self.multiple_rdkit_conformers = multiple_rdkit_conformers
         self.num_confs = num_confs
         self.conformer_id = 0
+        self.normalized_radius = normalized_radius
+
+        self.pocket_cutoff = self.pocket_cutoff / normalized_radius
+        self.chain_radius /= normalized_radius
+        self.subgraph_cutoff /= normalized_radius
+        self.surface_graph_cutoff /= normalized_radius
+        self.surface_mesh_cutoff /= normalized_radius
+        self.translation_distance /= normalized_radius
+        self.min_shell_thickness /= normalized_radius
+        self.lig_graph_radius /= normalized_radius
+        self.rec_graph_radius /= normalized_radius
+        self.random_rec_atom_subgraph_radius /= normalized_radius
+        self.subgraph_radius /= normalized_radius
         # print("MRD CON", self.multiple_rdkit_conformers)
         # exit(-1)
+        print("Normalized coordinates: ", self.normalized_radius)
         if self.lig_predictions_name == None:
             self.rec_subgraph_path = f'rec_subgraphs_cutoff{self.subgraph_cutoff}_radius{self.subgraph_radius}_maxNeigh{self.subgraph_max_neigbor}.pt'
         else:
@@ -314,16 +329,16 @@ class PDBBind(Dataset):
         for name in tqdm(complex_names, desc='loading ligands'):
             if self.bsp_ligands:
                 lig = read_molecule(os.path.join(self.bsp_dir, name, f'Lig_native.pdb'), sanitize=True,
-                                    remove_hs=self.remove_h)
+                                    remove_hs=self.remove_h, normalized_radius=self.normalized_radius)
                 if lig == None:
                     to_remove.append(name)
                     continue
             else:
                 lig = read_molecule(os.path.join(self.pdbbind_dir, name, f'{name}_ligand.sdf'), sanitize=True,
-                                    remove_hs=self.remove_h)
+                                    remove_hs=self.remove_h, normalized_radius=self.normalized_radius)
                 if lig == None:  # read mol2 file if sdf file cannot be sanitized
                     lig = read_molecule(os.path.join(self.pdbbind_dir, name, f'{name}_ligand.mol2'), sanitize=True,
-                                        remove_hs=self.remove_h)
+                                        remove_hs=self.remove_h, normalized_radius=self.normalized_radius)
             if self.only_polar_hydrogens:
                 for atom in lig.GetAtoms():
                     if atom.GetAtomicNum() == 1 and [x.GetAtomicNum() for x in atom.GetNeighbors()] == [6]:
@@ -347,12 +362,14 @@ class PDBBind(Dataset):
                 os.path.join(self.processed_dir, 'pocket_and_rec_coords.pt')) or (
                 not os.path.exists(os.path.join(self.processed_dir, self.rec_subgraph_path)) and self.rec_subgraph):
             log('Get receptors, filter chains, and get its coordinates. Subgraph mode: %s' % self.rec_subgraph)
-            print("Pmap util get recepter reps")
+            print("Pmap util get recepter reps, Normalized radius: ", self.normalized_radius)
 
             fout_path, _ = p_diskmap(get_receptor, list(zip(rec_paths, ligs)), is_dtuple=False,
-                             fout_path="%s/recs_allinfo_%s.dat" % (self.tmp_dir, self.tmp_suffix), njob=self.n_jobs,
-                             n_buffer_size=100, max_queue_size=1000, fout_path2=None, sub_func=get_sub_recs_info,
-                             cutoff=self.chain_radius)
+                                     fout_path="%s/recs_allinfo_%s.dat" % (self.tmp_dir, self.tmp_suffix),
+                                     njob=self.n_jobs,
+                                     n_buffer_size=100, max_queue_size=1000, fout_path2=None,
+                                     sub_func=get_sub_recs_info,
+                                     cutoff=self.chain_radius, normalized_radius=self.normalized_radius)
 
             reorder_xfile(fout_path)
 
@@ -411,8 +428,8 @@ class PDBBind(Dataset):
                     "%s/recs_allinfo_%s.dat_2" % (self.tmp_dir, self.tmp_suffix), len(ligs))
 
             fout_p, _ = p_diskmap(get_receptor_atom_subgraph, (
-            ObjListXFile("%s/recs_allinfo_%s.dat" % (self.tmp_dir, self.tmp_suffix), subFunc=get_arg_1_0),
-            recs_coords, ligs, ligs_coords), is_dtuple=True,
+                ObjListXFile("%s/recs_allinfo_%s.dat" % (self.tmp_dir, self.tmp_suffix), subFunc=get_arg_1_0),
+                recs_coords, ligs, ligs_coords), is_dtuple=True,
                                   fout_path="%s/recs_subgraph_%s.dat" % (self.tmp_dir, self.tmp_suffix),
                                   njob=self.n_jobs,
                                   n_buffer_size=100, max_queue_size=1000, fout_path2=None, sub_func=None,

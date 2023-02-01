@@ -1,3 +1,4 @@
+import copyreg
 import math
 import warnings
 
@@ -263,9 +264,12 @@ def safe_index(l, e):
         return len(l) - 1
 
 
-def get_receptor(rec_path, lig, cutoff):
+def get_receptor(rec_path, lig, cutoff, normalized_radius=1.0):
     conf = lig.GetConformer()
     lig_coords = conf.GetPositions()
+    lig_coords = lig_coords / normalized_radius
+
+    # Cutoff is already normalized before passing
     with warnings.catch_warnings():
         warnings.filterwarnings("ignore", category=PDBConstructionWarning)
         structure = biopython_parser.get_structure('random_id', rec_path)
@@ -292,14 +296,15 @@ def get_receptor(rec_path, lig, cutoff):
             c_alpha, n, c = None, None, None
             for atom in residue:
                 if atom.name == 'CA':
-                    c_alpha = list(atom.get_vector())
+                    c_alpha = list(atom.get_vector()/normalized_radius)
                 if atom.name == 'N':
-                    n = list(atom.get_vector())
+                    n = list(atom.get_vector()/normalized_radius)
                 if atom.name == 'C':
-                    c = list(atom.get_vector())
-                residue_coords.append(list(atom.get_vector()))
+                    c = list(atom.get_vector()/normalized_radius)
+                residue_coords.append(list(atom.get_vector() / normalized_radius))
             # TODO: Also include the chain_coords.append(np.array(residue_coords)) for non amino acids such that they can be used when using the atom representation of the receptor
             if c_alpha != None and n != None and c != None:  # only append residue if it is an amino acid and not some weired molecule that is part of the complex
+
                 chain_c_alpha_coords.append(c_alpha)
                 chain_n_coords.append(n)
                 chain_c_coords.append(c)
@@ -544,9 +549,9 @@ def get_pocket_coords(lig, rec_coords, cutoff=5.0, pocket_mode='match_atoms'):
         pocket_coords = 0.5 * (lig_pocket_coords + rec_pocket_coords)
     else:
         raise ValueError(f'pocket_mode -{pocket_mode}- not supported')
-    log('Num pocket nodes = ', len(pocket_coords), 'ligand nodes = ', lig_coords.shape[0],
-        'receptor num all atoms = ',
-        rec_coords.shape[0])
+    # log('Num pocket nodes = ', len(pocket_coords), 'ligand nodes = ', lig_coords.shape[0],
+    #     'receptor num all atoms = ',
+    #     rec_coords.shape[0])
     return torch.tensor(pocket_coords, dtype=torch.float32)
 
 
@@ -1219,11 +1224,36 @@ def lig_rec_graphs_to_complex_graph(ligand_graph, receptor_graph):
     return hetero_graph
 
 
-def read_molecule(molecule_file, sanitize=False, calc_charges=False, remove_hs=False):
+class NormalizedMol:
+    def __init__(self, mol, normalized_radius=1.0):
+        self.mol = mol
+        self.normalized_radius = normalized_radius
+        assert self.normalized_radius > 0.0
+
+    def __getattr__(self, attr):
+        if attr != "GetPositions":
+            return getattr(self.mol, attr)
+        else:
+            return self.GetNormPositions
+
+    def __setattr__(self, key, value):
+        # print("\nSet : ", key, value)
+        # exit(-1)
+        if key == "mol" or key == "normalized_radius":
+            super().__setattr__(key, value)
+        else:
+            self.mol.__setattr__(key, value)
+
+    def GetNormPositions(self):
+        return self.mol.GetPositions() / self.normalized_radius
+
+
+def read_molecule(molecule_file, sanitize=False, calc_charges=False, remove_hs=False, normalized_radius=1.0):
     """Load a molecule from a file of format ``.mol2`` or ``.sdf`` or ``.pdbqt`` or ``.pdb``.
 
     Parameters
     ----------
+    normalized_radius
     molecule_file : str
         Path to file for storing a molecule, which can be of format ``.mol2`` or ``.sdf``
         or ``.pdbqt`` or ``.pdb``.
@@ -1283,5 +1313,5 @@ def read_molecule(molecule_file, sanitize=False, calc_charges=False, remove_hs=F
             mol = Chem.RemoveHs(mol, sanitize=sanitize)
     except:
         return None
-
+    mol = NormalizedMol(mol, normalized_radius=normalized_radius)
     return mol

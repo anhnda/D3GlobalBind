@@ -27,8 +27,9 @@ val_names: 'data/timesplit_no_lig_overlap_val'
 test_names: 'data/timesplit_test'
 num_workers: 0
 dataset_params:
-  geometry_regularization_ring: True
-  use_rdkit_coords: True #
+  normalized_radius: 1500.0
+  geometry_regularization_ring: False
+  use_rdkit_coords: False #
   bsp_proteins: False # if this is true then the proteins from deepbsp are used, otherwise those from PDBBind. Note that not all proteins are in deepBSP and this only works with e.g. pdbbind_names_without_casf_rec_and_in_bsp as complex_names_path
   dataset_size: # mostly for debugging dataset creation. leave empty to use the whole dataset
   translation_distance: 5.0
@@ -92,11 +93,11 @@ model_type: 'EquiBind'
 model_parameters:
   geometry_reg_step_size: 0.001
   geometry_regularization: True
-  use_evolved_lig: True # Whether or not to use the evolved lig as final prediction
+  use_evolved_lig: False # Whether or not to use the evolved lig as final prediction
   standard_norm_order: True
   unnormalized_kpt_weights: False # no softmax for the weights that create the keypoints
-  lig_evolve: True # whether or not the coordinates are changed in the EGNN layers
-  rec_evolve: True
+  lig_evolve: False # whether or not the coordinates are changed in the EGNN layers
+  rec_evolve: False
   rec_no_softmax: False
   lig_no_softmax: False
   centroid_keypts_construction_rec: False
