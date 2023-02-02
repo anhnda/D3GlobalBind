@@ -12,14 +12,14 @@ num_val:  # leave empty to use all
 collate_function: graph_collate_revised
 loss_func: BindingLoss
 loss_params:
-  ot_loss_weight: 1
+  ot_loss_weight: 0
   key_point_alignmen_loss_weight: 0 # this does only work if ot_loss_weight is not 0
   centroid_loss_weight: 0
   intersection_loss_weight: 1
   intersection_sigma: 8 # 8 was determined by gridsearch over data
   intersection_surface_ct: 1 # grid search says 2.5
   translated_lig_kpt_ot_loss: False
-  kabsch_rmsd_weight: 1
+  kabsch_rmsd_weight: 0
 
 
 train_names: 'data/timesplit_no_lig_overlap_train'
@@ -28,6 +28,7 @@ test_names: 'data/timesplit_test'
 num_workers: 0
 dataset_params:
   normalized_radius: 1500.0
+  geometry_regularization: False
   geometry_regularization_ring: False
   use_rdkit_coords: False #
   bsp_proteins: False # if this is true then the proteins from deepbsp are used, otherwise those from PDBBind. Note that not all proteins are in deepBSP and this only works with e.g. pdbbind_names_without_casf_rec_and_in_bsp as complex_names_path
@@ -92,7 +93,7 @@ lr_scheduler_params:
 model_type: 'EquiBind'
 model_parameters:
   geometry_reg_step_size: 0.001
-  geometry_regularization: True
+  geometry_regularization: False
   use_evolved_lig: False # Whether or not to use the evolved lig as final prediction
   standard_norm_order: True
   unnormalized_kpt_weights: False # no softmax for the weights that create the keypoints

@@ -70,7 +70,7 @@ def compute_revised_intersection_loss(lig_coords, rec_coords, alpha = 0.2, beta=
     return distance_losses.sum()
 
 class BindingLoss(_Loss):
-    def __init__(self, ot_loss_weight=1, intersection_loss_weight=0, intersection_sigma=0, geom_reg_loss_weight=1, loss_rescale=True,
+    def __init__(self, ot_loss_weight=1, intersection_loss_weight=0, intersection_sigma=0, geom_reg_loss_weight=0, loss_rescale=True,
                  intersection_surface_ct=0, key_point_alignmen_loss_weight=0,revised_intersection_loss_weight=0, centroid_loss_weight=0, kabsch_rmsd_weight=0,translated_lig_kpt_ot_loss=False, revised_intersection_alpha=0.1, revised_intersection_beta=8, aggression=0) -> None:
         super(BindingLoss, self).__init__()
         self.ot_loss_weight = ot_loss_weight
@@ -103,7 +103,9 @@ class BindingLoss(_Loss):
 
         for i in range(len(ligs_coords_pred)):
             ## Compute average MSE loss (which is 3 times smaller than average squared RMSD)
-            ligs_coords_loss = ligs_coords_loss + self.mse_loss(ligs_coords_pred[i], ligs_coords[i])
+            mseLoss = self.mse_loss(ligs_coords_pred[i], ligs_coords[i])
+            # print(mseLoss)
+            ligs_coords_loss = ligs_coords_loss + mseLoss
 
             if self.ot_loss_weight > 0:
                 # Compute the OT loss for the binding pocket:

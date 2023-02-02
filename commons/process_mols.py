@@ -86,6 +86,7 @@ rec_residue_feature_dims = (list(map(len, [
 
 
 def lig_atom_featurizer(mol):
+    mol = mol.mol
     ComputeGasteigerCharges(mol)  # they are Nan for 93 molecules in all of PDBbind. We put a 0 in that case.
     ringinfo = mol.GetRingInfo()
     atom_features_list = []
@@ -119,6 +120,8 @@ sr = ShrakeRupley(probe_radius=1.4,  # in A. Default is 1.40 roughly the radius 
 
 
 def rec_atom_featurizer(rec, surface_indices):
+    print("Error: Not normalized sr")
+    exit(-1)
     surface_atom_feat = []
     c_alpha_feat = []
     sr.compute(rec, level="A")
@@ -153,7 +156,9 @@ def rec_atom_featurizer(rec, surface_indices):
 
 def get_receptor_atom_subgraph(rec, rec_coords, lig, lig_coords=None, graph_cutoff=4, max_neighbor=8,
                                subgraph_radius=7):
-    lig_coords = lig.GetConformer().GetPositions() if lig_coords == None else lig_coords
+    print("Error: Not normalized sr")
+    exit(-1)
+    lig_coords = lig.GetPositions() if lig_coords == None else lig_coords
     rec_coords = np.concatenate(rec_coords, axis=0)
     sr.compute(rec, level="A")
     lig_rec_distance = spa.distance.cdist(lig_coords, rec_coords)
@@ -201,9 +206,12 @@ def get_receptor_atom_subgraph(rec, rec_coords, lig, lig_coords=None, graph_cuto
     return graph
 
 
-def rec_residue_featurizer(rec):
+def rec_residue_featurizer(rec, normalized_radius=1.0):
     feature_list = []
-    sr.compute(rec, level="R")
+    srx = ShrakeRupley(probe_radius=1.4 / normalized_radius,
+                       # in A. Default is 1.40 roughly the radius of a water molecule.
+                       n_points=100)
+    srx.compute(rec, level="R")
     for residue in rec.get_residues():
         sasa = residue.sasa
         for atom in residue:
@@ -265,11 +273,11 @@ def safe_index(l, e):
 
 
 def get_receptor(rec_path, lig, cutoff, normalized_radius=1.0):
-    conf = lig.GetConformer()
-    lig_coords = conf.GetPositions()
-    lig_coords = lig_coords / normalized_radius
-
     # Cutoff is already normalized before passing
+    # lig.GetPositions is also normalized
+
+    lig_coords = lig.GetPositions()
+
     with warnings.catch_warnings():
         warnings.filterwarnings("ignore", category=PDBConstructionWarning)
         structure = biopython_parser.get_structure('random_id', rec_path)
@@ -296,11 +304,11 @@ def get_receptor(rec_path, lig, cutoff, normalized_radius=1.0):
             c_alpha, n, c = None, None, None
             for atom in residue:
                 if atom.name == 'CA':
-                    c_alpha = list(atom.get_vector()/normalized_radius)
+                    c_alpha = list(atom.get_vector() / normalized_radius)
                 if atom.name == 'N':
-                    n = list(atom.get_vector()/normalized_radius)
+                    n = list(atom.get_vector() / normalized_radius)
                 if atom.name == 'C':
-                    c = list(atom.get_vector()/normalized_radius)
+                    c = list(atom.get_vector() / normalized_radius)
                 residue_coords.append(list(atom.get_vector() / normalized_radius))
             # TODO: Also include the chain_coords.append(np.array(residue_coords)) for non amino acids such that they can be used when using the atom representation of the receptor
             if c_alpha != None and n != None and c != None:  # only append residue if it is an amino acid and not some weired molecule that is part of the complex
@@ -443,6 +451,8 @@ def get_receptor_inference(rec_path):
 
 
 def get_rdkit_coords(mol, seed=None):
+    print("Not revised. Exit")
+    exit(-1)
     ps = AllChem.ETKDGv2()
     if seed is not None:
         ps.randomSeed = seed
@@ -497,10 +507,9 @@ def get_multiple_rdkit_coords_individual(mol, num_conf=10):
     return np.array(conformers)
 
 
-def get_pocket_coords(lig, rec_coords, cutoff=5.0, pocket_mode='match_atoms'):
+def get_pocket_coords(lig, rec_coords, cutoff=5.0, pocket_mode='match_atoms', normalized_radius=1.0):
     rec_coords = np.concatenate(rec_coords, axis=0)
-    conf = lig.GetConformer()
-    lig_coords = conf.GetPositions()
+    lig_coords = lig.GetPositions()
     if pocket_mode == 'match_atoms':
         lig_rec_distance = spa.distance.cdist(lig_coords, rec_coords)
         closest_rec_idx = np.argmin(lig_rec_distance, axis=1)
@@ -534,11 +543,11 @@ def get_pocket_coords(lig, rec_coords, cutoff=5.0, pocket_mode='match_atoms'):
         active_lig = positive_tuple[0]
         active_rec = positive_tuple[1]
         dynamic_cutoff = cutoff
-        while active_lig.size < 4:
+        while active_lig.size < 4 / normalized_radius:
             log(
                 'Increasing pocket cutoff radius by 0.5 because there were less than 4 pocket nodes with radius: ',
                 dynamic_cutoff)
-            dynamic_cutoff += 0.5
+            dynamic_cutoff += 0.5 / normalized_radius
             positive_tuple = np.where(lig_rec_distance < dynamic_cutoff)
             active_lig = positive_tuple[0]
             active_rec = positive_tuple[1]
@@ -576,7 +585,7 @@ def complex_to_graph(lig, rec, rec_coords, c_alpha_coords, n_coords, c_coords, u
 
 
 def get_rec_graph(rec, rec_coords, c_alpha_coords, n_coords, c_coords, use_rec_atoms, rec_radius,
-                  surface_graph_cutoff, surface_mesh_cutoff, c_alpha_max_neighbors=None, surface_max_neighbors=None):
+                  surface_graph_cutoff, surface_mesh_cutoff, c_alpha_max_neighbors=None, surface_max_neighbors=None,normalized_radius=1):
     if use_rec_atoms:
         return get_hierarchical_graph(rec, rec_coords, c_alpha_coords, n_coords, c_coords,
                                       c_alpha_cutoff=rec_radius,
@@ -586,7 +595,7 @@ def get_rec_graph(rec, rec_coords, c_alpha_coords, n_coords, c_coords, use_rec_a
                                       surface_graph_cutoff=surface_graph_cutoff,
                                       )
     else:
-        return get_calpha_graph(rec, c_alpha_coords, n_coords, c_coords, rec_radius, c_alpha_max_neighbors)
+        return get_calpha_graph(rec, c_alpha_coords, n_coords, c_coords, rec_radius, c_alpha_max_neighbors, normalized_radius=normalized_radius)
 
 
 def get_sub_recs_info(recs, recs_coords, c_alpha_coords, n_coords, c_coords):
@@ -707,10 +716,10 @@ def get_lig_structure_graph(lig):
 
 
 def get_geometry_graph(lig):
-    coords = lig.GetConformer().GetPositions()
+    coords = lig.GetPositions()
     edges_src = []
     edges_dst = []
-    for i, atom in enumerate(lig.GetAtoms()):
+    for i, atom in enumerate(lig.mol.GetAtoms()):
         src_idx = atom.GetIdx()
         assert src_idx == i
         one_hop_dsts = [neighbor for neighbor in list(atom.GetNeighbors())]
@@ -724,7 +733,7 @@ def get_geometry_graph(lig):
         all_src_idx = [src_idx] * len(all_dst_idx)
         edges_src.extend(all_src_idx)
         edges_dst.extend(all_dst_idx)
-    graph = dgl.graph((torch.tensor(edges_src), torch.tensor(edges_dst)), num_nodes=lig.GetNumAtoms(),
+    graph = dgl.graph((torch.tensor(edges_src), torch.tensor(edges_dst)), num_nodes=lig.mol.GetNumAtoms(),
                       idtype=torch.long)
     graph.edata['feat'] = torch.from_numpy(
         np.linalg.norm(coords[edges_src] - coords[edges_dst], axis=1).astype(np.float32))
@@ -732,6 +741,7 @@ def get_geometry_graph(lig):
 
 
 def isRingAromatic(mol, bondRing):
+    mol = mol.mol
     for id in bondRing:
         if not mol.GetBondWithIdx(id).GetIsAromatic():
             return False
@@ -739,12 +749,12 @@ def isRingAromatic(mol, bondRing):
 
 
 def get_geometry_graph_ring(lig):
-    coords = lig.GetConformer().GetPositions()
-    rings = lig.GetRingInfo().AtomRings()
-    bond_rings = lig.GetRingInfo().BondRings()
+    coords = lig.GetPositions()
+    rings = lig.mol.GetRingInfo().AtomRings()
+    bond_rings = lig.mol.GetRingInfo().BondRings()
     edges_src = []
     edges_dst = []
-    for i, atom in enumerate(lig.GetAtoms()):
+    for i, atom in enumerate(lig.mol.GetAtoms()):
         src_idx = atom.GetIdx()
         assert src_idx == i
         one_hop_dsts = [neighbor for neighbor in list(atom.GetNeighbors())]
@@ -762,7 +772,7 @@ def get_geometry_graph_ring(lig):
         all_src_idx = [src_idx] * len(all_dst_idx)
         edges_src.extend(all_src_idx)
         edges_dst.extend(all_dst_idx)
-    graph = dgl.graph((torch.tensor(edges_src), torch.tensor(edges_dst)), num_nodes=lig.GetNumAtoms(),
+    graph = dgl.graph((torch.tensor(edges_src), torch.tensor(edges_dst)), num_nodes=lig.mol.GetNumAtoms(),
                       idtype=torch.long)
     graph.edata['feat'] = torch.from_numpy(
         np.linalg.norm(coords[edges_src] - coords[edges_dst], axis=1).astype(np.float32))
@@ -770,8 +780,9 @@ def get_geometry_graph_ring(lig):
 
 
 def get_lig_graph_multiple_conformer(mol, name, radius=20, max_neighbors=None, use_rdkit_coords=False, num_confs=10):
-    conf = mol.GetConformer()
-    true_lig_coords = conf.GetPositions()
+    print("Error: Has not been revised 783")
+    exit(-1)
+    true_lig_coords = mol.GetPositions()
     try:
         count = 0
         success = False
@@ -852,8 +863,7 @@ def get_lig_graph_multiple_conformer(mol, name, radius=20, max_neighbors=None, u
 
 
 def get_lig_graph_revised(mol, name, radius=20, max_neighbors=None, use_rdkit_coords=False):
-    conf = mol.GetConformer()
-    true_lig_coords = conf.GetPositions()
+    true_lig_coords = mol.GetPositions()
     if use_rdkit_coords:
         try:
             rdkit_coords = get_rdkit_coords(mol).numpy()
@@ -1101,7 +1111,7 @@ def get_hierarchical_graph(rec, rec_coords_list, c_alpha_coords, n_coords, c_coo
     return graph
 
 
-def get_calpha_graph(rec, c_alpha_coords, n_coords, c_coords, cutoff=20, max_neighbor=None):
+def get_calpha_graph(rec, c_alpha_coords, n_coords, c_coords, cutoff=20, max_neighbor=None, normalized_radius=1.0):
     ################## Extract 3D coordinates and n_i,u_i,v_i vectors of representative residues ################
     residue_representatives_loc_list = []
     n_i_list = []
@@ -1167,8 +1177,9 @@ def get_calpha_graph(rec, c_alpha_coords, n_coords, c_coords, cutoff=20, max_nei
     assert len(dist_list) == len(dst_list)
     graph = dgl.graph((torch.tensor(src_list), torch.tensor(dst_list)), num_nodes=num_residues, idtype=torch.int32)
 
-    graph.ndata['feat'] = rec_residue_featurizer(rec)
-    graph.edata['feat'] = distance_featurizer(dist_list, divisor=4)  # avg distance = 7. So divisor = (4/7)*7 = 4
+    graph.ndata['feat'] = rec_residue_featurizer(rec, normalized_radius)
+    graph.edata['feat'] = distance_featurizer(dist_list,
+                                              divisor=4 / normalized_radius)  # avg distance = 7. So divisor = (4/7)*7 = 4
 
     # Loop over all edges of the graph and build the various p_ij, q_ij, k_ij, t_ij pairs
     edge_feat_ori_list = []
@@ -1230,22 +1241,16 @@ class NormalizedMol:
         self.normalized_radius = normalized_radius
         assert self.normalized_radius > 0.0
 
-    def __getattr__(self, attr):
-        if attr != "GetPositions":
-            return getattr(self.mol, attr)
-        else:
-            return self.GetNormPositions
+    def GetConformer(self):
+        print("Removed GetConformer")
+        print("Exit")
+        exit(-1)
+        return 0
 
-    def __setattr__(self, key, value):
-        # print("\nSet : ", key, value)
-        # exit(-1)
-        if key == "mol" or key == "normalized_radius":
-            super().__setattr__(key, value)
-        else:
-            self.mol.__setattr__(key, value)
-
-    def GetNormPositions(self):
-        return self.mol.GetPositions() / self.normalized_radius
+    def GetPositions(self):
+        conf = self.mol.GetConformer()
+        mol_coords = conf.GetPositions()
+        return mol_coords / self.normalized_radius
 
 
 def read_molecule(molecule_file, sanitize=False, calc_charges=False, remove_hs=False, normalized_radius=1.0):

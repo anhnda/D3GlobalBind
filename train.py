@@ -172,9 +172,10 @@ def train(args, run_dir):
                     }
 
     train_data = PDBBind(device=device, complex_names_path=args.train_names,
-                         lig_predictions_name=args.train_predictions_name, is_train_data=True, **args.dataset_params)
+                          lig_predictions_name=args.train_predictions_name, is_train_data=True, **args.dataset_params)
     val_data = PDBBind(device=device, complex_names_path=args.val_names, lig_predictions_name=args.val_predictions_name,
                        **args.dataset_params)
+
     # print("Completed PDBBind data.")
     # exit(-1)
 

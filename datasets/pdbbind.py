@@ -71,6 +71,8 @@ class PDBBind(Dataset):
                  normalized_radius=1.0,
                  transform=None, **kwargs):
         # subset name is either 'pdbbind_filtered' or 'casf_test'
+        # print("Params: ",geometry_regularization)
+        # exit(-1)
         self.chain_radius = chain_radius
         self.pdbbind_dir = 'data/PDBBind'
         self.bsp_dir = 'data/deepBSP'
@@ -175,6 +177,8 @@ class PDBBind(Dataset):
         print("Len lig_graph", len(self.lig_graphs))
 
         print("Len rec graph", len(self.rec_graphs))
+        print("________________________________")
+        print("Geometry: ", self.geometry_regularization, self.geometry_regularization_ring)
         # exit(-1)
         if self.rec_subgraph:
             self.rec_atom_subgraphs, _ = load_graphs(os.path.join(self.processed_dir, self.rec_subgraph_path))
@@ -184,7 +188,7 @@ class PDBBind(Dataset):
             self.angles = masks_angles['angles']
             self.masks = masks_angles['masks']
         if self.geometry_regularization:
-            print(os.path.join(self.processed_dir, 'geometry_regularization.pt'))
+            print("Loading... ", os.path.join(self.processed_dir, 'geometry_regularization.pt'))
             self.geometry_graphs, _ = load_graphs(os.path.join(self.processed_dir, 'geometry_regularization.pt'))
         if self.geometry_regularization_ring:
             print(os.path.join(self.processed_dir, 'geometry_regularization_ring.pt'))
@@ -340,11 +344,11 @@ class PDBBind(Dataset):
                     lig = read_molecule(os.path.join(self.pdbbind_dir, name, f'{name}_ligand.mol2'), sanitize=True,
                                         remove_hs=self.remove_h, normalized_radius=self.normalized_radius)
             if self.only_polar_hydrogens:
-                for atom in lig.GetAtoms():
+                for atom in lig.mol.GetAtoms():
                     if atom.GetAtomicNum() == 1 and [x.GetAtomicNum() for x in atom.GetNeighbors()] == [6]:
                         atom.SetAtomicNum(0)
-                lig = Chem.DeleteSubstructs(lig, Chem.MolFromSmarts('[#0]'))
-                Chem.SanitizeMol(lig)
+                lig.mol = Chem.DeleteSubstructs(lig.mol, Chem.MolFromSmarts('[#0]'))
+                Chem.SanitizeMol(lig.mol)
             ligs.append(lig)
         for name in to_remove:
             complex_names.remove(name)
@@ -364,14 +368,14 @@ class PDBBind(Dataset):
             log('Get receptors, filter chains, and get its coordinates. Subgraph mode: %s' % self.rec_subgraph)
             print("Pmap util get recepter reps, Normalized radius: ", self.normalized_radius)
 
-            fout_path, _ = p_diskmap(get_receptor, list(zip(rec_paths, ligs)), is_dtuple=False,
-                                     fout_path="%s/recs_allinfo_%s.dat" % (self.tmp_dir, self.tmp_suffix),
-                                     njob=self.n_jobs,
-                                     n_buffer_size=100, max_queue_size=1000, fout_path2=None,
-                                     sub_func=get_sub_recs_info,
-                                     cutoff=self.chain_radius, normalized_radius=self.normalized_radius)
-
-            reorder_xfile(fout_path)
+            # fout_path, _ = p_diskmap(get_receptor, list(zip(rec_paths, ligs)), is_dtuple=False,
+            #                          fout_path="%s/recs_allinfo_%s.dat" % (self.tmp_dir, self.tmp_suffix),
+            #                          njob=self.n_jobs,
+            #                          n_buffer_size=100, max_queue_size=1000, fout_path2=None,
+            #                          sub_func=get_sub_recs_info,
+            #                          cutoff=self.chain_radius, normalized_radius=self.normalized_radius)
+            #
+            # reorder_xfile(fout_path)
 
         recs_coords = None
         if not os.path.exists(os.path.join(self.processed_dir, 'pocket_and_rec_coords.pt')):
@@ -382,7 +386,7 @@ class PDBBind(Dataset):
 
             pockets_coords = pmap_multi(get_pocket_coords, zip(ligs, recs_coords), n_jobs=self.n_jobs,
                                         cutoff=self.pocket_cutoff, pocket_mode=self.pocket_mode,
-                                        desc='Get pocket coords')
+                                        desc='Get pocket coords', normalized_radius=self.normalized_radius)
             recs_coords_concat = [torch.tensor(np.concatenate(rec_coords, axis=0)) for rec_coords in recs_coords]
             torch.save({'pockets_coords': pockets_coords,
                         'all_rec_coords': recs_coords_concat,
@@ -405,6 +409,7 @@ class PDBBind(Dataset):
                                     surface_graph_cutoff=self.surface_graph_cutoff,
                                     surface_mesh_cutoff=self.surface_mesh_cutoff,
                                     c_alpha_max_neighbors=self.c_alpha_max_neighbors,
+                                    normalized_radius=self.normalized_radius
                                     )
 
             rec_graphs = self.load_dat_from_tmp_pcache("%s/recs_graph_%s.dat" % (self.tmp_dir, self.tmp_suffix),
@@ -441,14 +446,7 @@ class PDBBind(Dataset):
                                                           n_size=len(ligs))
             save_graphs(os.path.join(self.processed_dir, self.rec_subgraph_path), rec_subgraphs)
             print("Rec_subgraph completed.")
-            # exit(-1)
 
-            # rec_subgraphs = pmap_multi(get_receptor_atom_subgraph,
-            #                            zip(recs, recs_coords, ligs, ligs_coords), n_jobs=self.n_jobs,
-            #                            max_neighbor=self.subgraph_max_neigbor, subgraph_radius=self.subgraph_radius,
-            #                            graph_cutoff=self.subgraph_cutoff,
-            #                            desc='get receptor subgraphs')
-            # save_graphs(os.path.join(self.processed_dir, self.rec_subgraph_path), rec_subgraphs)
         else:
             log(os.path.join(self.processed_dir, self.rec_subgraph_path),
                 ' already exists. Using those instead of creating new ones.')

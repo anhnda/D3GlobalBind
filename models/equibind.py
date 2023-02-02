@@ -427,6 +427,8 @@ class IEGMN_Layer(nn.Module):
     def forward(self, lig_graph, rec_graph, coords_lig, h_feats_lig, original_ligand_node_features, orig_coords_lig,
                 coords_rec, h_feats_rec, original_receptor_node_features, orig_coords_rec, mask, geometry_graph):
         with lig_graph.local_scope() and rec_graph.local_scope():
+            # print(geometry_graph)
+            # exit(-1)
             lig_graph.ndata['x_now'] = coords_lig
             rec_graph.ndata['x_now'] = coords_rec
             lig_graph.ndata['feat'] = h_feats_lig  # first time set here
