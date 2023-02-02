@@ -228,6 +228,8 @@ def get_arguments():
             else:
                 arg_dict[key] = value
         args.config = args.config.name
+        if arg_dict['negative_size_fraction'] > 0:
+            arg_dict['collate_function'] = arg_dict['collate_function'] + "_negative_sampling"
     else:
         config_dict = {}
 

@@ -4,12 +4,14 @@ data_seed: 1
 
 trainer: binding
 num_epochs: 1000000
-batch_size: 30
+batch_size: 20
 log_iterations: 100
 patience: 150
 num_train:  # leave empty to use all (in param train_names below)
 num_val:  # leave empty to use all
 collate_function: graph_collate_revised
+negative_size_fraction: 1
+
 loss_func: BindingLoss
 loss_params:
   ot_loss_weight: 0
@@ -20,12 +22,14 @@ loss_params:
   intersection_surface_ct: 1 # grid search says 2.5
   translated_lig_kpt_ot_loss: False
   kabsch_rmsd_weight: 0
-
+  negative_size_fraction: 1
+  negative_lambda: 0.1
 
 train_names: 'data/timesplit_no_lig_overlap_train'
 val_names: 'data/timesplit_no_lig_overlap_val'
 test_names: 'data/timesplit_test'
 num_workers: 0
+
 dataset_params:
   normalized_radius: 1500.0
   geometry_regularization: False
