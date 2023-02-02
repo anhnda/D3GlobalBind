@@ -25,7 +25,7 @@ loss_params:
   negative_size_fraction: 1
   negative_lambda: 0.1
   aff_weight: 1
-  aff_neg_lambda : 0.1
+  aff_neg_lambda : 0.3
 
 train_names: 'data/timesplit_no_lig_overlap_train'
 val_names: 'data/timesplit_no_lig_overlap_val'

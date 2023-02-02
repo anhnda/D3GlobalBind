@@ -75,7 +75,8 @@ class BindingLoss(_Loss):
                  loss_rescale=True,
                  intersection_surface_ct=0, key_point_alignmen_loss_weight=0, revised_intersection_loss_weight=0,
                  centroid_loss_weight=0, kabsch_rmsd_weight=0, translated_lig_kpt_ot_loss=False,
-                 revised_intersection_alpha=0.1, revised_intersection_beta=8, aggression=0, negative_size_fraction=1.0, aff_weight=1, aff_neg_lambda=0.1,
+                 revised_intersection_alpha=0.1, revised_intersection_beta=8, aggression=0, negative_size_fraction=1.0,
+                 aff_weight=1, aff_neg_lambda=0.1,
                  negative_lambda=0.1) -> None:
         super(BindingLoss, self).__init__()
         self.ot_loss_weight = ot_loss_weight
@@ -111,8 +112,7 @@ class BindingLoss(_Loss):
         kabsch_rmsd_loss = 0
 
         total_size = len(ligs_coords)
-        negative_anchor = int(1 / (self.negative_size_fraction + 1) * total_size)
-
+        negative_anchor = int(1.0 / (self.negative_size_fraction + 1) * total_size)
         aff_loss = 0
         if len(ligs_keypts) > 0 and len(ligs_keypts[0]) == 1:
             aff_predicted = torch.tensor(ligs_keypts).to(device)
@@ -125,15 +125,17 @@ class BindingLoss(_Loss):
             aff_loss = torch.mean(aff_loss)
             # print("In aff", aff_loss)
 
-
         for i in range(len(ligs_coords_pred)):
+            # mse only for binding cases
+            if i >= negative_anchor:
+                # ligs_coords_loss = ligs_coords_loss - self.negative_lambda * mseLoss
+                continue
+
             ## Compute average MSE loss (which is 3 times smaller than average squared RMSD)
             mseLoss = self.mse_loss(ligs_coords_pred[i], ligs_coords[i])
 
             # If it is negative sampling, change sign of loss, add to total loss and continue
-            if i >= negative_anchor:
-                ligs_coords_loss = ligs_coords_loss - self.negative_lambda * mseLoss
-                continue
+
             # Else: continue as noma
             ligs_coords_loss = ligs_coords_loss + mseLoss
             if self.ot_loss_weight > 0:
@@ -194,8 +196,9 @@ class BindingLoss(_Loss):
             intersection_loss_revised = intersection_loss_revised / float(len(ligs_coords_pred))
             geom_reg_loss = geom_reg_loss / float(len(ligs_coords_pred))
 
-        loss = ligs_coords_loss + self.aff_weight * aff_loss +  self.ot_loss_weight * ot_loss + self.intersection_loss_weight * intersection_loss + keypts_loss * self.key_point_alignmen_loss_weight + centroid_loss * self.centroid_loss_weight + kabsch_rmsd_loss * self.kabsch_rmsd_weight + intersection_loss_revised * self.revised_intersection_loss_weight + geom_reg_loss * self.geom_reg_loss_weight
-        return loss, {'ligs_coords_loss': ligs_coords_loss, 'aff_loss':aff_loss, 'recs_coords_loss': recs_coords_loss, 'ot_loss': ot_loss,
+        loss = ligs_coords_loss + self.aff_weight * aff_loss + self.ot_loss_weight * ot_loss + self.intersection_loss_weight * intersection_loss + keypts_loss * self.key_point_alignmen_loss_weight + centroid_loss * self.centroid_loss_weight + kabsch_rmsd_loss * self.kabsch_rmsd_weight + intersection_loss_revised * self.revised_intersection_loss_weight + geom_reg_loss * self.geom_reg_loss_weight
+        return loss, {'ligs_coords_loss': ligs_coords_loss, 'aff_loss': aff_loss, 'recs_coords_loss': recs_coords_loss,
+                      'ot_loss': ot_loss,
                       'intersection_loss': intersection_loss, 'keypts_loss': keypts_loss,
                       'centroid_loss:': centroid_loss, 'kabsch_rmsd_loss': kabsch_rmsd_loss,
                       'intersection_loss_revised': intersection_loss_revised, 'geom_reg_loss': geom_reg_loss}
