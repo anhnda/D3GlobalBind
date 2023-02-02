@@ -10,8 +10,29 @@ from dgl import function as fn
 
 from commons.process_mols import AtomEncoder, rec_atom_feature_dims, rec_residue_feature_dims, lig_feature_dims
 from commons.logger import log
+from models.D3GraphEncoder import D3GraphEncoder
 
 
+def get_rotation_matrix_from_vectors(vec_src, vec_target, device=None):
+    """ Find the rotation matrix that aligns vec1 to vec2
+    :param vec_src: A 3d "source" vector
+    :param vec_target: A 3d "destination" vector
+    :return mat: A transform matrix (3x3) which when applied to vec1, aligns it with vec2.
+    """
+
+    a, b = (vec_src / torch.linalg.norm(vec_src)).reshape(3), (vec_target / torch.linalg.norm(vec_target)).reshape(3)
+    v = torch.cross(a, b)
+    e3 = torch.eye(3).to(device)
+    # return e3
+    if any(v):  # if not all zeros then
+        c = torch.dot(a, b)
+        s = torch.linalg.norm(v)
+        kmat = torch.tensor([[0, -v[2], v[1]], [v[2], 0, -v[0]], [-v[1], v[0], 0]]).to(device)
+
+        return e3 + kmat + torch.matmul(kmat, kmat) *  ((1 - c) / (s ** 2))
+
+    else:
+        return e3
 class GraphNorm(nn.Module):
     def __init__(self, num_features, eps=1e-5, affine=True, is_node=True):
         super().__init__()
@@ -573,7 +594,7 @@ class IEGMN_Layer(nn.Module):
 
 
 # =================================================================================================================
-class IEGMN(nn.Module):
+class GlobalGMN(nn.Module):
 
     def __init__(self, n_lays, debug, device, use_rec_atoms, shared_layers, noise_decay_rate, cross_msgs, noise_initial,
                  use_edge_features_in_gmn, use_mean_node_features, residue_emb_dim, iegmn_lay_hid_dim, num_att_heads,
@@ -582,8 +603,8 @@ class IEGMN(nn.Module):
                  unnormalized_kpt_weights=False, centroid_keypts_construction_rec=False,
                  centroid_keypts_construction_lig=False, rec_no_softmax=False, lig_no_softmax=False,
                  normalize_Z_rec_directions=False,
-                 centroid_keypts_construction=False, evolve_only=False, separate_lig=False, save_trajectories=False, **kwargs):
-        super(IEGMN, self).__init__()
+                 centroid_keypts_construction=False, evolve_only=False, separate_lig=False, save_trajectories=False, hidden_aff_dim=200,act_aff='relu', **kwargs):
+        super(GlobalGMN, self).__init__()
         self.debug = debug
         self.cross_msgs = cross_msgs
         self.device = device
@@ -708,25 +729,25 @@ class IEGMN(nn.Module):
         # Attention layers
         self.num_att_heads = num_att_heads
         self.out_feats_dim = iegmn_lay_hid_dim
-        self.keypts_attention_lig = nn.Sequential(
-            nn.Linear(self.out_feats_dim, self.num_att_heads * self.out_feats_dim, bias=False))
-        self.keypts_queries_lig = nn.Sequential(
-            nn.Linear(self.out_feats_dim, self.num_att_heads * self.out_feats_dim, bias=False))
-        self.keypts_attention_rec = nn.Sequential(
-            nn.Linear(self.out_feats_dim, self.num_att_heads * self.out_feats_dim, bias=False))
-        self.keypts_queries_rec = nn.Sequential(
-            nn.Linear(self.out_feats_dim, self.num_att_heads * self.out_feats_dim, bias=False))
+        # self.keypts_attention_lig = nn.Sequential(
+        #     nn.Linear(self.out_feats_dim, self.num_att_heads * self.out_feats_dim, bias=False))
+        # self.keypts_queries_lig = nn.Sequential(
+        #     nn.Linear(self.out_feats_dim, self.num_att_heads * self.out_feats_dim, bias=False))
+        # self.keypts_attention_rec = nn.Sequential(
+        #     nn.Linear(self.out_feats_dim, self.num_att_heads * self.out_feats_dim, bias=False))
+        # self.keypts_queries_rec = nn.Sequential(
+        #     nn.Linear(self.out_feats_dim, self.num_att_heads * self.out_feats_dim, bias=False))
 
-        self.h_mean_lig = nn.Sequential(
-            nn.Linear(self.out_feats_dim, self.out_feats_dim),
-            nn.Dropout(dropout),
-            get_non_lin(nonlin, leakyrelu_neg_slope),
-        )
-        self.h_mean_rec = nn.Sequential(
-            nn.Linear(self.out_feats_dim, self.out_feats_dim),
-            nn.Dropout(dropout),
-            get_non_lin(nonlin, leakyrelu_neg_slope),
-        )
+        # self.h_mean_lig = nn.Sequential(
+        #     nn.Linear(self.out_feats_dim, self.out_feats_dim),
+        #     nn.Dropout(dropout),
+        #     get_non_lin(nonlin, leakyrelu_neg_slope),
+        # )
+        # self.h_mean_rec = nn.Sequential(
+        #     nn.Linear(self.out_feats_dim, self.out_feats_dim),
+        #     nn.Dropout(dropout),
+        #     get_non_lin(nonlin, leakyrelu_neg_slope),
+        # )
 
         if self.unnormalized_kpt_weights:
             self.scale_lig = nn.Linear(self.out_feats_dim, 1)
@@ -738,6 +759,16 @@ class IEGMN(nn.Module):
         if self.normalize_Z_rec_directions:
             self.Z_rec_dir_norm = CoordsNorm()
 
+        self.ligandGlobalEncoder = D3GraphEncoder(iegmn_lay_hid_dim, device=device).to(device)
+        self.ligandGlobalEncoder = D3GraphEncoder(iegmn_lay_hid_dim, device=device).to(device)
+        self.receptorGlobalEncoder = D3GraphEncoder(iegmn_lay_hid_dim, device=device).to(device)
+        self.bindingAffLayer1 = nn.Linear(iegmn_lay_hid_dim * 2, hidden_aff_dim).to(device)
+        self.bindingAffLayer2 = nn.Linear(hidden_aff_dim, 1).to(device)
+
+        if act_aff.lower() == 'relu':
+            self.actBindingAff = torch.nn.ReLU()
+        else:
+            raise TypeError('Not assign act aff: ', act_aff)
     def reset_parameters(self):
         for p in self.parameters():
             if p.dim() > 1:
@@ -871,11 +902,15 @@ class IEGMN(nn.Module):
         recs_keypts = []
         ligs_keypts = []
         ligs_evolved = []
+        affs = []
         ligs_node_idx = torch.cumsum(lig_graph.batch_num_nodes(), dim=0).tolist()
         ligs_node_idx.insert(0, 0)
         recs_node_idx = torch.cumsum(rec_graph.batch_num_nodes(), dim=0).tolist()
         recs_node_idx.insert(0, 0)
         if self.evolve_only:
+            print("Error: No only evolve")
+            print("Exit@ I912")
+            exit(-1)
             for idx in range(len(ligs_node_idx) - 1):
                 lig_start = ligs_node_idx[idx]
                 lig_end = ligs_node_idx[idx + 1]
@@ -883,7 +918,7 @@ class IEGMN(nn.Module):
                 ligs_evolved.append(Z_lig_coords)
             return [rotations, translations, ligs_keypts, recs_keypts, ligs_evolved, geom_losses]
 
-        ### TODO: run SVD in batches, if possible
+        ### TODO: run GlobalGMN in batches, if possible
         for idx in range(len(ligs_node_idx) - 1):
             lig_start = ligs_node_idx[idx]
             lig_end = ligs_node_idx[idx + 1]
@@ -892,132 +927,55 @@ class IEGMN(nn.Module):
             # Get H vectors
 
             rec_feats = h_feats_rec[rec_start:rec_end]  # (m, d)
-            rec_feats_mean = torch.mean(self.h_mean_rec(rec_feats), dim=0, keepdim=True)  # (1, d)
+            # rec_feats_mean = torch.mean(self.h_mean_rec(rec_feats), dim=0, keepdim=True)  # (1, d)
             lig_feats = h_feats_lig[lig_start:lig_end]  # (n, d)
-            lig_feats_mean = torch.mean(self.h_mean_lig(lig_feats), dim=0, keepdim=True)  # (1, d)
+            # lig_feats_mean = torch.mean(self.h_mean_lig(lig_feats), dim=0, keepdim=True)  # (1, d)
 
             d = lig_feats.shape[1]
             assert d == self.out_feats_dim
             # Z coordinates
             Z_rec_coords = coords_rec[rec_start:rec_end]
             Z_lig_coords = coords_lig[lig_start:lig_end]
+            ligand_global_feature, ligand_binding_centroid, ligand_binding_direction = self.ligandGlobalEncoder(
+                lig_feats, Z_lig_coords)
+            receptor_global_feature, receptor_binding_centroid, receptor_binding_direction = self.receptorGlobalEncoder(
+               rec_feats, Z_rec_coords)
 
-            # Att weights to compute the receptor centroid. They query is the average_h_ligand. Keys are each h_receptor_j
-            att_weights_rec = (self.keypts_attention_rec(rec_feats).view(-1, self.num_att_heads, d).transpose(0, 1) @
-                               self.keypts_queries_rec(lig_feats_mean).view(1, self.num_att_heads, d).transpose(0,
-                                                                                                                1).transpose(
-                                   1, 2) /
-                               math.sqrt(d)).view(self.num_att_heads, -1)
-            if not self.rec_no_softmax:
-                att_weights_rec = torch.softmax(att_weights_rec, dim=1)
-            att_weights_rec = att_weights_rec.view(self.num_att_heads, -1)
+            rotation = get_rotation_matrix_from_vectors(ligand_binding_direction, receptor_binding_direction,
+                                                        device=self.device)
 
-            # Att weights to compute the ligand centroid. They query is the average_h_receptor. Keys are each h_ligand_i
-            att_weights_lig = (self.keypts_attention_lig(lig_feats).view(-1, self.num_att_heads, d).transpose(0, 1) @
-                               self.keypts_queries_lig(rec_feats_mean).view(1, self.num_att_heads, d).transpose(0,
-                                                                                                                1).transpose(
-                                   1, 2) /
-                               math.sqrt(d))
-            if not self.lig_no_softmax:
-                att_weights_lig = torch.softmax(att_weights_lig, dim=1)
-            att_weights_lig = att_weights_lig.view(self.num_att_heads, -1)
+            translation = receptor_binding_centroid - ligand_binding_centroid  # (1,3)
+            translation = torch.unsqueeze(translation, 0)
+            aff = self.bindingAffLayer2(
+                self.actBindingAff(self.bindingAffLayer1(torch.cat([ligand_global_feature, receptor_global_feature]))))
 
-            if self.unnormalized_kpt_weights:
-                lig_scales = self.scale_lig(lig_feats)
-                rec_scales = self.scale_rec(rec_feats)
-                Z_lig_coords = Z_lig_coords * lig_scales
-                Z_rec_coords = Z_rec_coords * rec_scales
-
-            if self.centroid_keypts_construction_rec:
-                Z_rec_mean = Z_rec_coords.mean(dim=0)
-                Z_rec_directions = Z_rec_coords - Z_rec_mean
-                if self.normalize_Z_rec_directions:
-                    Z_rec_directions = self.Z_rec_dir_norm(Z_rec_directions)
-                rec_keypts = att_weights_rec @ Z_rec_directions  # K_heads, 3
-                if self.move_keypts_back:
-                    rec_keypts += Z_rec_mean
-            else:
-                rec_keypts = att_weights_rec @ Z_rec_coords  # K_heads, 3
-
-            if self.centroid_keypts_construction or self.centroid_keypts_construction_lig:
-                Z_lig_mean = Z_lig_coords.mean(dim=0)
-                Z_lig_directions = Z_lig_coords - Z_lig_mean
-                if self.normalize_Z_lig_directions:
-                    Z_lig_directions = self.Z_lig_dir_norm(Z_lig_directions)
-                lig_keypts = att_weights_lig @ Z_lig_directions  # K_heads, 3
-                if self.move_keypts_back:
-                    lig_keypts += Z_lig_mean
-            else:
-                lig_keypts = att_weights_lig @ Z_lig_coords  # K_heads, 3
-
-            recs_keypts.append(rec_keypts)
-            ligs_keypts.append(lig_keypts)
-
-            if torch.isnan(lig_keypts).any():
-                log(complex_names, 'complex_names where Nan encountered')
-            assert not torch.isnan(lig_keypts).any()
-            if torch.isinf(lig_keypts).any():
-                log(complex_names, 'complex_names where inf encountered')
-            assert not torch.isinf(lig_keypts).any()
-            ## Apply Kabsch algorithm
-            rec_keypts_mean = rec_keypts.mean(dim=0, keepdim=True)  # (1,3)
-            lig_keypts_mean = lig_keypts.mean(dim=0, keepdim=True)  # (1,3)
-
-            A = (rec_keypts - rec_keypts_mean).transpose(0, 1) @ (lig_keypts - lig_keypts_mean) / float(
-                self.num_att_heads)  # 3, 3
-            if torch.isnan(A).any():
-                log(complex_names, 'complex_names where Nan encountered')
-            assert not torch.isnan(A).any()
-            if torch.isinf(A).any():
-                log(complex_names, 'complex_names where inf encountered')
-            assert not torch.isinf(A).any()
-
-            U, S, Vt = torch.linalg.svd(A)
-            num_it = 0
-            while torch.min(S) < 1e-3 or torch.min(
-                    torch.abs((S ** 2).view(1, 3) - (S ** 2).view(3, 1) + torch.eye(3).to(self.device))) < 1e-2:
-                if self.debug: log('S inside loop ', num_it, ' is ', S, ' and A = ', A)
-                A = A + torch.rand(3, 3).to(self.device) * torch.eye(3).to(self.device)
-                U, S, Vt = torch.linalg.svd(A)
-                num_it += 1
-                if num_it > 10: raise Exception('SVD was consitantly unstable')
-
-            corr_mat = torch.diag(torch.tensor([1, 1, torch.sign(torch.det(A))], device=self.device))
-            rotation = (U @ corr_mat) @ Vt
-
-            translation = rec_keypts_mean - torch.t(rotation @ lig_keypts_mean.t())  # (1,3)
-
-            #################### end AP 1 #########################
-
-            if self.debug:
-                log('rec_keypts_mean', rec_keypts_mean)
-                log('lig_keypts_mean', lig_keypts_mean)
 
             rotations.append(rotation)
             translations.append(translation)
+            affs.append(aff)
             if self.separate_lig:
                 ligs_evolved.append(coords_lig_separate[lig_start:lig_end])
             else:
                 ligs_evolved.append(Z_lig_coords)
 
-        return [rotations, translations, ligs_keypts, recs_keypts, ligs_evolved, geom_losses]
+        return [rotations, translations, affs, 0, 0, 0]
 
     def __repr__(self):
-        return "IEGMN " + str(self.__dict__)
+        return "GlobalGMN " + str(self.__dict__)
 
 
 # =================================================================================================================
 
 
-class EquiBind(nn.Module):
+class GlobalBind(nn.Module):
 
     def __init__(self, device='cuda:0', debug=False, use_evolved_lig=False, evolve_only=False, **kwargs):
-        super(EquiBind, self).__init__()
+        super(GlobalBind, self).__init__()
         self.debug = debug
         self.evolve_only = evolve_only
         self.use_evolved_lig = use_evolved_lig
         self.device = device
-        self.iegmn = IEGMN(device=self.device, debug=self.debug, evolve_only=self.evolve_only, **kwargs)
+        self.globalgmn = GlobalGMN(device=self.device, debug=self.debug, evolve_only=self.evolve_only, **kwargs)
 
     def reset_parameters(self):
         for p in self.parameters():
@@ -1029,7 +987,7 @@ class EquiBind(nn.Module):
     def forward(self, lig_graph, rec_graph, geometry_graph=None, complex_names=None, epoch=0):
         if self.debug: log(complex_names)
         predicted_ligs_coords_list = []
-        outputs = self.iegmn(lig_graph, rec_graph, geometry_graph, complex_names, epoch)
+        outputs = self.globalgmn(lig_graph, rec_graph, geometry_graph, complex_names, epoch)
         evolved_ligs = outputs[4]
         if self.evolve_only:
             return evolved_ligs, outputs[2], outputs[3], outputs[0], outputs[1], outputs[5]
@@ -1059,4 +1017,4 @@ class EquiBind(nn.Module):
         return predicted_ligs_coords_list, outputs[2], outputs[3], outputs[0], outputs[1], outputs[5]
 
     def __repr__(self):
-        return "EquiBind " + str(self.__dict__)
+        return "GlobalBind " + str(self.__dict__)

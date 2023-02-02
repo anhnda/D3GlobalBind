@@ -4,7 +4,7 @@ data_seed: 1
 
 trainer: binding
 num_epochs: 1000000
-batch_size: 20
+batch_size: 15
 log_iterations: 100
 patience: 150
 num_train:  # leave empty to use all (in param train_names below)
@@ -17,7 +17,7 @@ loss_params:
   ot_loss_weight: 0
   key_point_alignmen_loss_weight: 0 # this does only work if ot_loss_weight is not 0
   centroid_loss_weight: 0
-  intersection_loss_weight: 1
+  intersection_loss_weight: 0.00065
   intersection_sigma: 8 # 8 was determined by gridsearch over data
   intersection_surface_ct: 1 # grid search says 2.5
   translated_lig_kpt_ot_loss: False
@@ -94,7 +94,8 @@ lr_scheduler_params:
 
 
 # Model parameters
-model_type: 'EquiBind'
+model_type: 'GlobalBind'
+# model_type: 'EquiBind'
 model_parameters:
   geometry_reg_step_size: 0.001
   geometry_regularization: False
@@ -119,8 +120,8 @@ model_parameters:
   noise_initial: 1
   use_edge_features_in_gmn: True
   use_mean_node_features: True
-  residue_emb_dim: 64
-  iegmn_lay_hid_dim: 64
+  residue_emb_dim: 60
+  iegmn_lay_hid_dim: 60
   num_att_heads: 30 # 20 ic  good run
   dropout: 0.1
   nonlin: 'lkyrelu' # ['swish', 'lkyrelu']

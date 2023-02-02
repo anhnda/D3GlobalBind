@@ -120,7 +120,6 @@ class BindingLoss(_Loss):
                 continue
             # Else: continue as noma
             ligs_coords_loss = ligs_coords_loss + mseLoss
-
             if self.ot_loss_weight > 0:
                 # Compute the OT loss for the binding pocket:
                 ligand_pocket_coors = ligs_pocket_coords[i]  ##  (N, 3), N = num pocket nodes
