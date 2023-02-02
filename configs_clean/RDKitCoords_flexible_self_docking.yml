@@ -4,7 +4,7 @@ data_seed: 1
 
 trainer: binding
 num_epochs: 1000000
-batch_size: 15
+batch_size: 10
 log_iterations: 100
 patience: 150
 num_train:  # leave empty to use all (in param train_names below)
@@ -24,6 +24,8 @@ loss_params:
   kabsch_rmsd_weight: 0
   negative_size_fraction: 1
   negative_lambda: 0.1
+  aff_weight: 1
+  aff_neg_lambda : 0.1
 
 train_names: 'data/timesplit_no_lig_overlap_train'
 val_names: 'data/timesplit_no_lig_overlap_val'
@@ -38,7 +40,7 @@ dataset_params:
   bsp_proteins: False # if this is true then the proteins from deepbsp are used, otherwise those from PDBBind. Note that not all proteins are in deepBSP and this only works with e.g. pdbbind_names_without_casf_rec_and_in_bsp as complex_names_path
   dataset_size: # mostly for debugging dataset creation. leave empty to use the whole dataset
   translation_distance: 5.0
-  n_jobs: 7 # leave empty to use num_cpu - 1
+  n_jobs: 6 # leave empty to use num_cpu - 1
   chain_radius: 10 # only keep chains that have an atom in this radius around the ligand
   rec_graph_radius: 30
   c_alpha_max_neighbors: 10 # maximum number of neighbors in the receptor graph unless using rec_atoms

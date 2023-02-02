@@ -727,7 +727,7 @@ class GlobalGMN(nn.Module):
                                     dropout=dropout,
                                     save_trajectories=save_trajectories,**kwargs))
         # Attention layers
-        self.num_att_heads = num_att_heads
+        # self.num_att_heads = num_att_heads
         self.out_feats_dim = iegmn_lay_hid_dim
         # self.keypts_attention_lig = nn.Sequential(
         #     nn.Linear(self.out_feats_dim, self.num_att_heads * self.out_feats_dim, bias=False))
