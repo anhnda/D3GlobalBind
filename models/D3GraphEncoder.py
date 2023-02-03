@@ -24,10 +24,6 @@ class D3PositionalEncoder(torch.nn.Module):
         return xs
 
 
-def generate_square_subsequent_mask(sz: int):
-    """Generates an upper-triangular matrix of -inf, with zeros on diag."""
-    return torch.triu(torch.ones(sz, sz) * float('-inf'), diagonal=1)
-
 
 class D3GraphEncoder(torch.nn.Module):
     def __init__(self, d_model=512, n_layer=5, n_head=5, d_ff=2048, dropout_rate=0.1, device=None):
@@ -52,7 +48,8 @@ class D3GraphEncoder(torch.nn.Module):
         features = features + coords
         features = torch.unsqueeze(features, 1).to(self.device)
         features = self.dropout(features)
-        src_mask = generate_square_subsequent_mask(features.shape[0]).to(self.device)
+        src_mask = torch.zeros((features.shape[0], features.shape[0]), device=self.device).type(torch.bool)
+
         out_all = self.transformerEncoder(features, src_mask)
         globalInfoVector = out_all.squeeze()[-1, :]
         globalBindingFeature = self.globalFeatureLayer(globalInfoVector)
