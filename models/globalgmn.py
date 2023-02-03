@@ -29,10 +29,12 @@ def get_rotation_matrix_from_vectors(vec_src, vec_target, device=None):
         s = torch.linalg.norm(v)
         kmat = torch.tensor([[0, -v[2], v[1]], [v[2], 0, -v[0]], [-v[1], v[0], 0]]).to(device)
 
-        return e3 + kmat + torch.matmul(kmat, kmat) *  ((1 - c) / (s ** 2))
+        return e3 + kmat + torch.matmul(kmat, kmat) * ((1 - c) / (s ** 2))
 
     else:
         return e3
+
+
 class GraphNorm(nn.Module):
     def __init__(self, num_features, eps=1e-5, affine=True, is_node=True):
         super().__init__()
@@ -181,10 +183,10 @@ class IEGMN_Layer(nn.Module):
             geometry_regularization=False,
             pre_crossmsg_norm_type=0,
             post_crossmsg_norm_type=0,
-            norm_cross_coords_update= False,
-            loss_geometry_regularization = False,
-            geom_reg_steps= 1,
-        geometry_reg_step_size=0.1
+            norm_cross_coords_update=False,
+            loss_geometry_regularization=False,
+            geom_reg_steps=1,
+            geometry_reg_step_size=0.1
     ):
 
         super(IEGMN_Layer, self).__init__()
@@ -198,7 +200,7 @@ class IEGMN_Layer(nn.Module):
         self.x_connection_init = x_connection_init
         self.rec_square_distance_scale = rec_square_distance_scale
         self.geometry_reg_step_size = geometry_reg_step_size
-        self.norm_cross_coords_update =norm_cross_coords_update
+        self.norm_cross_coords_update = norm_cross_coords_update
         self.loss_geometry_regularization = loss_geometry_regularization
 
         self.debug = debug
@@ -269,7 +271,7 @@ class IEGMN_Layer(nn.Module):
                 self.lig_cross_coords_norm = CoordsNorm(scale_init=1e-2)
                 self.rec_cross_coords_norm = CoordsNorm(scale_init=1e-2)
             else:
-                self.lig_cross_coords_norm =nn.Identity()
+                self.lig_cross_coords_norm = nn.Identity()
                 self.rec_cross_coords_norm = nn.Identity()
 
         self.att_mlp_Q_lig = nn.Sequential(
@@ -510,12 +512,14 @@ class IEGMN_Layer(nn.Module):
 
             if self.fine_tune:
                 x_evolved_lig = x_evolved_lig + self.att_mlp_cross_coors_V_lig(h_feats_lig) * (
-                        self.lig_cross_coords_norm(lig_graph.ndata['x_now'] - cross_attention(self.att_mlp_cross_coors_Q_lig(h_feats_lig),
+                    self.lig_cross_coords_norm(
+                        lig_graph.ndata['x_now'] - cross_attention(self.att_mlp_cross_coors_Q_lig(h_feats_lig),
                                                                    self.att_mlp_cross_coors_K(h_feats_rec),
                                                                    rec_graph.ndata['x_now'], mask, self.cross_msgs)))
             if self.fine_tune:
                 x_evolved_rec = x_evolved_rec + self.att_mlp_cross_coors_V(h_feats_rec) * (
-                        self.rec_cross_coords_norm(rec_graph.ndata['x_now'] - cross_attention(self.att_mlp_cross_coors_Q(h_feats_rec),
+                    self.rec_cross_coords_norm(
+                        rec_graph.ndata['x_now'] - cross_attention(self.att_mlp_cross_coors_Q(h_feats_rec),
                                                                    self.att_mlp_cross_coors_K_lig(h_feats_lig),
                                                                    lig_graph.ndata['x_now'], mask.transpose(0, 1),
                                                                    self.cross_msgs)))
@@ -535,17 +539,17 @@ class IEGMN_Layer(nn.Module):
                 dst = dst.long()
                 for step in range(self.geom_reg_steps):
                     d_squared = torch.sum((x_evolved_lig[src] - x_evolved_lig[dst]) ** 2, dim=1)
-                    Loss = torch.sum((d_squared - geometry_graph.edata['feat'] ** 2)**2) # this is the loss whose gradient we are calculating here
+                    Loss = torch.sum((d_squared - geometry_graph.edata[
+                        'feat'] ** 2) ** 2)  # this is the loss whose gradient we are calculating here
                     grad_d_squared = 2 * (x_evolved_lig[src] - x_evolved_lig[dst])
-                    geometry_graph.edata['partial_grads'] = 2 * (d_squared - geometry_graph.edata['feat'] ** 2)[:,None] * grad_d_squared
+                    geometry_graph.edata['partial_grads'] = 2 * (d_squared - geometry_graph.edata['feat'] ** 2)[:,
+                                                                None] * grad_d_squared
                     geometry_graph.update_all(fn.copy_edge('partial_grads', 'partial_grads_msg'),
                                               fn.sum('partial_grads_msg', 'grad_x_evolved'))
                     grad_x_evolved = geometry_graph.ndata['grad_x_evolved']
                     x_evolved_lig = x_evolved_lig + self.geometry_reg_step_size * grad_x_evolved
                     if self.save_trajectories:
                         trajectory.append(x_evolved_lig.detach().cpu())
-
-
 
             if self.debug:
                 log(torch.max(lig_graph.ndata['aggr_msg'].abs()), 'data[aggr_msg]: \sum_j m_{i->j} ')
@@ -592,7 +596,6 @@ class IEGMN_Layer(nn.Module):
         return "IEGMN Layer " + str(self.__dict__)
 
 
-
 # =================================================================================================================
 class GlobalGMN(nn.Module):
 
@@ -603,14 +606,16 @@ class GlobalGMN(nn.Module):
                  unnormalized_kpt_weights=False, centroid_keypts_construction_rec=False,
                  centroid_keypts_construction_lig=False, rec_no_softmax=False, lig_no_softmax=False,
                  normalize_Z_rec_directions=False,
-                 centroid_keypts_construction=False, evolve_only=False, separate_lig=False, save_trajectories=False, hidden_aff_dim=200,act_aff='relu', **kwargs):
+                 centroid_keypts_construction=False, evolve_only=False, separate_lig=False, save_trajectories=False,
+                 hidden_aff_dim=200, act_aff='relu', n_d3graph_layer=5, n_d3graph_head=12
+                 , d3_ff_size=200, d3_graph_dropout_rate=0.1, batch_d3=False, **kwargs):
         super(GlobalGMN, self).__init__()
         self.debug = debug
         self.cross_msgs = cross_msgs
         self.device = device
         self.save_trajectories = save_trajectories
         self.unnormalized_kpt_weights = unnormalized_kpt_weights
-        self.separate_lig =separate_lig
+        self.separate_lig = separate_lig
         self.use_rec_atoms = use_rec_atoms
         self.noise_decay_rate = noise_decay_rate
         self.noise_initial = noise_initial
@@ -627,14 +632,16 @@ class GlobalGMN(nn.Module):
         self.rec_no_softmax = rec_no_softmax
         self.lig_no_softmax = lig_no_softmax
         self.evolve_only = evolve_only
+        self.batch_d3 = batch_d3
 
         self.lig_atom_embedder = AtomEncoder(emb_dim=residue_emb_dim - self.random_vec_dim,
                                              feature_dims=lig_feature_dims, use_scalar_feat=use_scalar_features,
                                              n_feats_to_use=num_lig_feats)
         if self.separate_lig:
             self.lig_separate_atom_embedder = AtomEncoder(emb_dim=residue_emb_dim - self.random_vec_dim,
-                                                 feature_dims=lig_feature_dims, use_scalar_feat=use_scalar_features,
-                                                 n_feats_to_use=num_lig_feats)
+                                                          feature_dims=lig_feature_dims,
+                                                          use_scalar_feat=use_scalar_features,
+                                                          n_feats_to_use=num_lig_feats)
         if self.use_rec_atoms:
             self.rec_embedder = AtomEncoder(emb_dim=residue_emb_dim - self.random_vec_dim,
                                             feature_dims=rec_atom_feature_dims, use_scalar_feat=use_scalar_features)
@@ -656,7 +663,7 @@ class GlobalGMN(nn.Module):
                         debug=debug,
                         device=device,
                         dropout=dropout,
-                        save_trajectories=save_trajectories,**kwargs))
+                        save_trajectories=save_trajectories, **kwargs))
 
         if shared_layers:
             interm_lay = IEGMN_Layer(orig_h_feats_dim=input_node_feats_dim,
@@ -668,7 +675,7 @@ class GlobalGMN(nn.Module):
                                      debug=debug,
                                      device=device,
                                      dropout=dropout,
-                                     save_trajectories=save_trajectories,**kwargs)
+                                     save_trajectories=save_trajectories, **kwargs)
             for layer_idx in range(1, n_lays):
                 self.iegmn_layers.append(interm_lay)
         else:
@@ -684,7 +691,7 @@ class GlobalGMN(nn.Module):
                                 debug=debug_this_layer,
                                 device=device,
                                 dropout=dropout,
-                                save_trajectories=save_trajectories,**kwargs))
+                                save_trajectories=save_trajectories, **kwargs))
         if self.separate_lig:
             self.iegmn_layers_separate = nn.ModuleList()
             self.iegmn_layers_separate.append(
@@ -697,7 +704,7 @@ class GlobalGMN(nn.Module):
                             debug=debug,
                             device=device,
                             dropout=dropout,
-                            save_trajectories=save_trajectories,**kwargs))
+                            save_trajectories=save_trajectories, **kwargs))
 
             if shared_layers:
                 interm_lay = IEGMN_Layer(orig_h_feats_dim=input_node_feats_dim,
@@ -709,7 +716,7 @@ class GlobalGMN(nn.Module):
                                          debug=debug,
                                          device=device,
                                          dropout=dropout,
-                                         save_trajectories=save_trajectories,**kwargs)
+                                         save_trajectories=save_trajectories, **kwargs)
                 for layer_idx in range(1, n_lays):
                     self.iegmn_layers_separate.append(interm_lay)
             else:
@@ -725,7 +732,7 @@ class GlobalGMN(nn.Module):
                                     debug=debug_this_layer,
                                     device=device,
                                     dropout=dropout,
-                                    save_trajectories=save_trajectories,**kwargs))
+                                    save_trajectories=save_trajectories, **kwargs))
         # Attention layers
         # self.num_att_heads = num_att_heads
         self.out_feats_dim = iegmn_lay_hid_dim
@@ -758,10 +765,15 @@ class GlobalGMN(nn.Module):
             self.Z_lig_dir_norm = CoordsNorm()
         if self.normalize_Z_rec_directions:
             self.Z_rec_dir_norm = CoordsNorm()
+        print(iegmn_lay_hid_dim, n_d3graph_layer, n_d3graph_head, d3_ff_size, d3_graph_dropout_rate)
 
-        self.ligandGlobalEncoder = D3GraphEncoder(iegmn_lay_hid_dim, device=device).to(device)
-        self.ligandGlobalEncoder = D3GraphEncoder(iegmn_lay_hid_dim, device=device).to(device)
-        self.receptorGlobalEncoder = D3GraphEncoder(iegmn_lay_hid_dim, device=device).to(device)
+        self.ligandGlobalEncoder = D3GraphEncoder(iegmn_lay_hid_dim, n_d3graph_layer=n_d3graph_layer,
+                                                  n_d3graph_head=n_d3graph_head, d3_ff_size=d3_ff_size,
+                                                  d3_graph_dropout_rate=d3_graph_dropout_rate, device=device).to(device)
+        self.receptorGlobalEncoder = D3GraphEncoder(iegmn_lay_hid_dim, n_d3graph_layer=n_d3graph_layer,
+                                                    n_d3graph_head=n_d3graph_head, d3_ff_size=d3_ff_size,
+                                                    d3_graph_dropout_rate=d3_graph_dropout_rate, device=device).to(
+            device)
         self.bindingAffLayer1 = nn.Linear(iegmn_lay_hid_dim * 2, hidden_aff_dim).to(device)
         self.bindingAffLayer2 = nn.Linear(hidden_aff_dim, 1).to(device)
 
@@ -769,6 +781,7 @@ class GlobalGMN(nn.Module):
             self.actBindingAff = torch.nn.ReLU()
         else:
             raise TypeError('Not assign act aff: ', act_aff)
+
     def reset_parameters(self):
         for p in self.parameters():
             if p.dim() > 1:
@@ -842,10 +855,10 @@ class GlobalGMN(nn.Module):
         if self.cross_msgs:
             mask = get_mask(lig_graph.batch_num_nodes(), rec_graph.batch_num_nodes(), self.device)
         if self.separate_lig:
-            coords_lig_separate =coords_lig
-            h_feats_lig_separate =h_feats_lig
-            coords_rec_separate =coords_rec
-            h_feats_rec_separate =h_feats_rec
+            coords_lig_separate = coords_lig
+            h_feats_lig_separate = h_feats_lig
+            coords_rec_separate = coords_rec
+            h_feats_rec_separate = h_feats_rec
         full_trajectory = [coords_lig.detach().cpu()]
         geom_losses = 0
         for i, layer in enumerate(self.iegmn_layers):
@@ -854,18 +867,18 @@ class GlobalGMN(nn.Module):
             h_feats_lig, \
             coords_rec, \
             h_feats_rec, trajectory, geom_loss = layer(lig_graph=lig_graph,
-                                rec_graph=rec_graph,
-                                coords_lig=coords_lig,
-                                h_feats_lig=h_feats_lig,
-                                original_ligand_node_features=original_ligand_node_features,
-                                orig_coords_lig=orig_coords_lig,
-                                coords_rec=coords_rec,
-                                h_feats_rec=h_feats_rec,
-                                original_receptor_node_features=original_receptor_node_features,
-                                orig_coords_rec=orig_coords_rec,
-                                mask=mask,
-                                geometry_graph=geometry_graph
-                                )
+                                                       rec_graph=rec_graph,
+                                                       coords_lig=coords_lig,
+                                                       h_feats_lig=h_feats_lig,
+                                                       original_ligand_node_features=original_ligand_node_features,
+                                                       orig_coords_lig=orig_coords_lig,
+                                                       coords_rec=coords_rec,
+                                                       h_feats_rec=h_feats_rec,
+                                                       original_receptor_node_features=original_receptor_node_features,
+                                                       orig_coords_rec=orig_coords_rec,
+                                                       mask=mask,
+                                                       geometry_graph=geometry_graph
+                                                       )
             if not self.separate_lig:
                 geom_losses = geom_losses + geom_loss
                 full_trajectory.extend(trajectory)
@@ -876,23 +889,24 @@ class GlobalGMN(nn.Module):
                 h_feats_lig_separate, \
                 coords_rec_separate, \
                 h_feats_rec_separate, trajectory, geom_loss = layer(lig_graph=lig_graph,
-                                    rec_graph=rec_graph,
-                                    coords_lig=coords_lig_separate,
-                                    h_feats_lig=h_feats_lig_separate,
-                                    original_ligand_node_features=original_ligand_node_features,
-                                    orig_coords_lig=orig_coords_lig,
-                                    coords_rec=coords_rec_separate,
-                                    h_feats_rec=h_feats_rec_separate,
-                                    original_receptor_node_features=original_receptor_node_features,
-                                    orig_coords_rec=orig_coords_rec,
-                                    mask=mask,
-                                    geometry_graph=geometry_graph
-                                    )
+                                                                    rec_graph=rec_graph,
+                                                                    coords_lig=coords_lig_separate,
+                                                                    h_feats_lig=h_feats_lig_separate,
+                                                                    original_ligand_node_features=original_ligand_node_features,
+                                                                    orig_coords_lig=orig_coords_lig,
+                                                                    coords_rec=coords_rec_separate,
+                                                                    h_feats_rec=h_feats_rec_separate,
+                                                                    original_receptor_node_features=original_receptor_node_features,
+                                                                    orig_coords_rec=orig_coords_rec,
+                                                                    mask=mask,
+                                                                    geometry_graph=geometry_graph
+                                                                    )
                 geom_losses = geom_losses + geom_loss
                 full_trajectory.extend(trajectory)
         if self.save_trajectories:
             save_name = '_'.join(complex_names)
-            torch.save({'trajectories': full_trajectory, 'names': complex_names}, f'data/results/trajectories/{save_name}.pt')
+            torch.save({'trajectories': full_trajectory, 'names': complex_names},
+                       f'data/results/trajectories/{save_name}.pt')
         if self.debug:
             log(torch.max(h_feats_lig.abs()), 'max h_feats_lig after MPNN')
             log(torch.max(coords_lig.abs()), 'max coords_lig before after MPNN')
@@ -919,6 +933,10 @@ class GlobalGMN(nn.Module):
             return [rotations, translations, ligs_keypts, recs_keypts, ligs_evolved, geom_losses]
 
         ### TODO: run GlobalGMN in batches, if possible
+        lig_feats_list = []
+        rec_feats_list = []
+        z_lig_list = []
+        z_rec_list = []
         for idx in range(len(ligs_node_idx) - 1):
             lig_start = ligs_node_idx[idx]
             lig_end = ligs_node_idx[idx + 1]
@@ -936,27 +954,67 @@ class GlobalGMN(nn.Module):
             # Z coordinates
             Z_rec_coords = coords_rec[rec_start:rec_end]
             Z_lig_coords = coords_lig[lig_start:lig_end]
-            ligand_global_feature, ligand_binding_centroid, ligand_binding_direction = self.ligandGlobalEncoder(
-                lig_feats, Z_lig_coords)
-            receptor_global_feature, receptor_binding_centroid, receptor_binding_direction = self.receptorGlobalEncoder(
-               rec_feats, Z_rec_coords)
 
-            rotation = get_rotation_matrix_from_vectors(ligand_binding_direction, receptor_binding_direction,
-                                                        device=self.device)
+            lig_feats_list.append(lig_feats)
+            rec_feats_list.append(rec_feats)
+            z_lig_list.append(Z_lig_coords)
+            z_rec_list.append(Z_rec_coords)
 
-            translation = receptor_binding_centroid - ligand_binding_centroid  # (1,3)
-            translation = torch.unsqueeze(translation, 0)
-            aff = self.bindingAffLayer2(
-                self.actBindingAff(self.bindingAffLayer1(torch.cat([ligand_global_feature, receptor_global_feature]))))
+        if self.batch_d3:
+            ligand_global_features, ligand_binding_centroids, ligand_binding_directions = self.ligandGlobalEncoder(
+                lig_feats_list, z_lig_list)
+            receptor_global_features, receptor_binding_centroids, receptor_binding_directions = self.receptorGlobalEncoder(
+                rec_feats_list, z_rec_list)
+
+            affs = self.bindingAffLayer2(
+                self.actBindingAff(
+                    self.bindingAffLayer1(torch.cat([ligand_global_features, receptor_global_features], dim=1))))
+            for i in range(ligand_global_features.shape[0]):
+                rotation = get_rotation_matrix_from_vectors(ligand_binding_directions[i], receptor_binding_directions[i],
+                                                            device=self.device)
+
+                translation = receptor_binding_centroids[i] - ligand_binding_centroids[i]
+                translation = torch.unsqueeze(translation, 0)  # (1,3)
+                rotations.append(rotation)
+                translations.append(translation)
+
+        else:
+            for idx in range(len(ligs_node_idx) - 1):
+
+                # Get H vectors
+
+                rec_feats = rec_feats_list[idx]  # (m, d)
+                lig_feats = lig_feats_list[idx]  # (n, d)
+
+                d = lig_feats.shape[1]
+                assert d == self.out_feats_dim
+                # Z coordinates
+                Z_rec_coords = z_rec_list[idx]
+                Z_lig_coords = z_lig_list[idx]
+                ligand_global_feature, ligand_binding_centroid, ligand_binding_direction = self.ligandGlobalEncoder(
+                    lig_feats, Z_lig_coords)
+                receptor_global_feature, receptor_binding_centroid, receptor_binding_direction = self.receptorGlobalEncoder(
+                    rec_feats, Z_rec_coords)
+
+                rotation = get_rotation_matrix_from_vectors(ligand_binding_direction, receptor_binding_direction,
+                                                            device=self.device)
+
+                translation = receptor_binding_centroid - ligand_binding_centroid
+                translation = torch.unsqueeze(translation, 0)  # (1,3)
+                rotations.append(rotation)
+                translations.append(translation)
 
 
-            rotations.append(rotation)
-            translations.append(translation)
-            affs.append(aff)
-            if self.separate_lig:
-                ligs_evolved.append(coords_lig_separate[lig_start:lig_end])
-            else:
-                ligs_evolved.append(Z_lig_coords)
+                aff = self.bindingAffLayer2(
+                    self.actBindingAff(
+                        self.bindingAffLayer1(torch.cat([ligand_global_feature, receptor_global_feature]))))
+
+
+                affs.append(aff)
+                if self.separate_lig:
+                    ligs_evolved.append(coords_lig_separate[lig_start:lig_end])
+                else:
+                    ligs_evolved.append(Z_lig_coords)
 
         return [rotations, translations, affs, 0, 0, 0]
 
@@ -1013,7 +1071,7 @@ class GlobalBind(nn.Module):
                     predicted_coords.mean(dim=0) - lig_graph.ndata['x'][
                                                    start:end].mean(dim=0), '\n')
             predicted_ligs_coords_list.append(predicted_coords)
-        #torch.save({'predictions': predicted_ligs_coords_list, 'names': complex_names})
+        # torch.save({'predictions': predicted_ligs_coords_list, 'names': complex_names})
         return predicted_ligs_coords_list, outputs[2], outputs[3], outputs[0], outputs[1], outputs[5]
 
     def __repr__(self):

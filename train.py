@@ -124,6 +124,7 @@ def get_trainer(args, model, data, device, metrics, run_dir, sampler=None):
 
 
 def load_model(args, data_sample, device, **kwargs):
+
     model = globals()[args.model_type](device=device,
                                            lig_input_edge_feats_dim=data_sample[0].edata['feat'].shape[1],
                                            rec_input_edge_feats_dim=data_sample[1].edata['feat'].shape[1],

@@ -115,12 +115,14 @@ class BindingLoss(_Loss):
         negative_anchor = int(1.0 / (self.negative_size_fraction + 1) * total_size)
         aff_loss = 0
         if len(ligs_keypts) > 0 and len(ligs_keypts[0]) == 1:
-            aff_predicted = torch.tensor(ligs_keypts).to(device)
+            aff_predicted = ligs_keypts
+            if type(aff_predicted) is not torch.Tensor:
+                aff_predicted = torch.tensor(ligs_keypts).to(device)
             aff_target = torch.ones(total_size).to(device)
-            aff_target[negative_anchor] = 0
+            aff_target[negative_anchor:] = 0
             mask = torch.ones(total_size).to(device)
-            mask[negative_anchor] = self.aff_neg_lambda
-            aff_loss = aff_predicted - aff_loss
+            mask[negative_anchor:] = self.aff_neg_lambda
+            aff_loss = aff_predicted - aff_target
             aff_loss = aff_loss * aff_loss * mask
             aff_loss = torch.mean(aff_loss)
             # print("In aff", aff_loss)

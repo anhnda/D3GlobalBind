@@ -4,7 +4,7 @@ data_seed: 1
 
 trainer: binding
 num_epochs: 1000000
-batch_size: 10
+batch_size: 5
 log_iterations: 100
 loss_db_step: 20
 patience: 150
@@ -18,7 +18,7 @@ loss_params:
   ot_loss_weight: 0
   key_point_alignmen_loss_weight: 0 # this does only work if ot_loss_weight is not 0
   centroid_loss_weight: 0
-  intersection_loss_weight: 0.00065
+  intersection_loss_weight: 0.0001
   intersection_sigma: 8 # 8 was determined by gridsearch over data
   intersection_surface_ct: 1 # grid search says 2.5
   translated_lig_kpt_ot_loss: False
@@ -96,6 +96,7 @@ lr_scheduler_params:
   verbose: True
 
 
+
 # Model parameters
 model_type: 'GlobalBind'
 # model_type: 'EquiBind'
@@ -144,8 +145,12 @@ model_parameters:
   num_lig_feats:  # leave as None to use all ligand features. Have a look at lig_feature_dims in process_mols.py to see what features we are talking about. If this is 1, only the first of those will be used.
   normalize_coordinate_update: True
   rec_square_distance_scale: 10 # divide square distance by 10 to have a nicer separation instead of many 0.00000
-
-
+  n_d3graph_layer: 4
+  n_d3graph_head: 5
+  d3_graph_dropout_rate: 0.1
+  d3_ff_size: 1024
+  hidden_aff_dim: 200
+  batch_d3: False
 eval_on_test: False
 # continue training from checkpoint:
 #checkpoint: runs/path_to_the_experiment/last_checkpoint.pt
