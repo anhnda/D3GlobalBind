@@ -6,6 +6,7 @@ trainer: binding
 num_epochs: 1000000
 batch_size: 10
 log_iterations: 100
+loss_db_step: 20
 patience: 150
 num_train:  # leave empty to use all (in param train_names below)
 num_val:  # leave empty to use all

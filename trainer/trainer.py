@@ -54,7 +54,7 @@ class Trainer():
             self.best_val_score = -np.inf if self.main_metric_goal == 'max' else np.inf  # running score to decide whether or not a new model should be saved
             self.writer = SummaryWriter(run_dir)
             shutil.copyfile(self.args.config, os.path.join(self.writer.log_dir, os.path.basename(self.args.config)))
-        #for i, param_group in enumerate(self.optim.param_groups):
+        # for i, param_group in enumerate(self.optim.param_groups):
         #    param_group['lr'] = 0.0003
         self.epoch = self.start_epoch
         log(f'Log directory: {self.writer.log_dir}')
@@ -103,7 +103,7 @@ class Trainer():
                     shutil.copyfile(os.path.join(self.writer.log_dir, 'best_checkpoint.pt'),
                                     os.path.join(self.writer.log_dir, f'best_checkpoint_{epoch}epochs.pt'))
                 self.after_epoch()
-                #if val_loss > 10000:
+                # if val_loss > 10000:
                 #    raise Exception
 
         # evaluate on best checkpoint
@@ -114,7 +114,7 @@ class Trainer():
     def forward_pass(self, batch):
 
         targets = batch[-1]  # the last entry of the batch tuple is always the targets
-        #exit(-1)
+        # exit(-1)
         predictions = self.model(*batch[0])  # foward the rest of the batch to the model
         loss, *loss_components = self.loss_func(predictions, targets)
         # if loss_func does not return any loss_components, we turn the empty list into None
@@ -146,7 +146,10 @@ class Trainer():
             # loss components is either none, or a dict with the components of the loss function
             # print("Process Batch")
             loss, loss_components, predictions, targets = self.process_batch(batch, optim)
-            print("Loss: ", loss)
+            if i % self.hparams['loss_db_step'] == 0:
+                print("Loss@", i, loss.data, loss_components['ligs_coords_loss'].data, loss_components['aff_loss'].data,
+                      loss_components['intersection_loss'].data)
+
             with torch.no_grad():
                 if loss_components != None and i == 0:  # add loss_component keys to total_metrics
                     total_metrics.update({k: 0 for k in loss_components.keys()})
