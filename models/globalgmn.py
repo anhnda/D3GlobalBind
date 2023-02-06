@@ -977,6 +977,8 @@ class GlobalGMN(nn.Module):
                 translation = torch.unsqueeze(translation, 0)  # (1,3)
                 rotations.append(rotation)
                 translations.append(translation)
+                ligs_keypts.append(ligand_binding_centroids[i])
+                recs_keypts.append(receptor_binding_centroids[i])
 
         else:
             for idx in range(len(ligs_node_idx) - 1):
@@ -1004,6 +1006,8 @@ class GlobalGMN(nn.Module):
                 rotations.append(rotation)
                 translations.append(translation)
 
+                ligs_keypts.append(ligand_binding_centroid)
+                recs_keypts.append(receptor_binding_centroid)
 
                 aff = self.bindingAffLayer2(
                     self.actBindingAff(
@@ -1016,7 +1020,7 @@ class GlobalGMN(nn.Module):
                 else:
                     ligs_evolved.append(Z_lig_coords)
 
-        return [rotations, translations, affs, 0, 0, 0]
+        return [rotations, translations, affs, ligs_keypts, recs_keypts, 0]
 
     def __repr__(self):
         return "GlobalGMN " + str(self.__dict__)

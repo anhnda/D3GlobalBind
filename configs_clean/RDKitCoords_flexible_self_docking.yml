@@ -79,8 +79,8 @@ metrics:
   - kabsch_rmsd
   - rmsd_less_than_2
   - rmsd_less_than_5
-main_metric: rmsd_less_than_2 # used for early stopping etc
-main_metric_goal: 'max'
+main_metric: mean_rmsd # used for early stopping etc
+main_metric_goal: 'min'
 
 optimizer: Adam
 optimizer_params:
