@@ -368,14 +368,14 @@ class PDBBind(Dataset):
             log('Get receptors, filter chains, and get its coordinates. Subgraph mode: %s' % self.rec_subgraph)
             print("Pmap util get recepter reps, Normalized radius: ", self.normalized_radius)
 
-            # fout_path, _ = p_diskmap(get_receptor, list(zip(rec_paths, ligs)), is_dtuple=False,
-            #                          fout_path="%s/recs_allinfo_%s.dat" % (self.tmp_dir, self.tmp_suffix),
-            #                          njob=self.n_jobs,
-            #                          n_buffer_size=100, max_queue_size=1000, fout_path2=None,
-            #                          sub_func=get_sub_recs_info,
-            #                          cutoff=self.chain_radius, normalized_radius=self.normalized_radius)
-            #
-            # reorder_xfile(fout_path)
+            fout_path, _ = p_diskmap(get_receptor, list(zip(rec_paths, ligs)), is_dtuple=False,
+                                     fout_path="%s/recs_allinfo_%s.dat" % (self.tmp_dir, self.tmp_suffix),
+                                     njob=self.n_jobs,
+                                     n_buffer_size=100, max_queue_size=1000, fout_path2=None,
+                                     sub_func=get_sub_recs_info,
+                                     cutoff=self.chain_radius, normalized_radius=self.normalized_radius)
+
+            reorder_xfile(fout_path)
 
         recs_coords = None
         if not os.path.exists(os.path.join(self.processed_dir, 'pocket_and_rec_coords.pt')):

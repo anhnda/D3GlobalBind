@@ -582,7 +582,8 @@ class IEGMN(nn.Module):
                  unnormalized_kpt_weights=False, centroid_keypts_construction_rec=False,
                  centroid_keypts_construction_lig=False, rec_no_softmax=False, lig_no_softmax=False,
                  normalize_Z_rec_directions=False,
-                 centroid_keypts_construction=False, evolve_only=False, separate_lig=False, save_trajectories=False, **kwargs):
+                 centroid_keypts_construction=False, evolve_only=False, separate_lig=False, save_trajectories=False, hidden_aff_dim=200, act_aff='relu', n_d3graph_layer=5, n_d3graph_head=12
+                 , d3_ff_size=200, d3_graph_dropout_rate=0.1, batch_d3=False,**kwargs):
         super(IEGMN, self).__init__()
         self.debug = debug
         self.cross_msgs = cross_msgs

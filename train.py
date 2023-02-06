@@ -1,5 +1,6 @@
 import argparse
 import concurrent.futures
+from functools import partial
 
 import os
 import sys
@@ -150,7 +151,8 @@ def train_wrapper(args):
 
 def train(args, run_dir):
     seed_all(args.seed)
-    device = torch.device("cuda:0" if torch.cuda.is_available() and args.device == 'cuda' else "cpu")
+
+    device = torch.device(args.cuda_id if torch.cuda.is_available() and args.device == 'cuda' else "cpu")
     metrics_dict = {'rsquared': Rsquared(),
                     'mean_rmsd': RMSD(),
                     'mean_centroid_distance': CentroidDist(),
@@ -192,6 +194,15 @@ def train(args, run_dir):
     log('trainable params in model: ', sum(p.numel() for p in model.parameters() if p.requires_grad))
     collate_function = globals()[args.collate_function] if args.collate_params == {} else globals()[
         args.collate_function](**args.collate_params)
+    if args.model_type == 'EquiBind':
+        print("Set NegFract to 0")
+        collate_function = partial(collate_function, fraction=0)
+        print(collate_function)
+    else:
+        print("Using Collate with Neg fract ", args.negative_size_fraction)
+        collate_function = partial(collate_function, fraction=args.negative_size_fraction)
+
+        print(collate_function)
     if args.train_sampler != None:
         sampler = globals()[args.train_sampler](data_source=train_data, batch_size=args.batch_size)
         train_loader = DataLoader(train_data, batch_sampler=sampler, collate_fn=collate_function,
@@ -229,8 +240,9 @@ def get_arguments():
             else:
                 arg_dict[key] = value
         args.config = args.config.name
-        if arg_dict['negative_size_fraction'] > 0:
-            arg_dict['collate_function'] = arg_dict['collate_function'] + "_negative_sampling"
+        # if arg_dict['negative_size_fraction'] > 0:
+        #     arg_dict['collate_function'] = arg_dict['collate_function'] + "_negative_sampling"
+
     else:
         config_dict = {}
 

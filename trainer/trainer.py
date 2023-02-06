@@ -147,7 +147,11 @@ class Trainer():
             # print("Process Batch")
             loss, loss_components, predictions, targets = self.process_batch(batch, optim)
             if i % self.hparams['loss_db_step'] == 0:
-                print("Loss@", i, loss.data, loss_components['ligs_coords_loss'].data, loss_components['aff_loss'].data,
+                if type(loss_components['aff_loss']) is int:
+                    aff_l = "unk"
+                else:
+                    aff_l = loss_components['aff_loss'].data
+                print("Loss@", i, loss.data, loss_components['ligs_coords_loss'].data, aff_l,
                       loss_components['intersection_loss'].data)
 
             with torch.no_grad():

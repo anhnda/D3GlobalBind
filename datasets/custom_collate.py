@@ -47,30 +47,31 @@ def graph_collate_revised_negative_sampling(batch, fraction=1.0):
     lig_graphs, rec_graphs, ligs_coords, recs_coords, all_rec_coords, pockets_coords_lig, geometry_graph, complex_names, idx = map(
         list, zip(*batch))
     batch_size = len(lig_graphs)
-    neg_size = int(batch_size * fraction)
-    indices = [i for i in range(batch_size)]
-    neg_ids_lig = random.choices(indices, k=neg_size)
-    neg_ids_rec = random.choices(indices, k=neg_size)
-    lig_graphs_negs = get_sub(lig_graphs, neg_ids_lig)
-    lig_coords_negs = get_sub(ligs_coords, neg_ids_lig)
-    rec_graphs_negs = get_sub(rec_graphs, neg_ids_rec)
-    recs_coords_negs = get_sub(recs_coords, neg_ids_rec)
-    all_rec_coords_negs = get_sub(all_rec_coords, neg_ids_rec)
-    pockets_coords_lig_negs = get_sub(pockets_coords_lig, neg_ids_lig)
+    if fraction > 0:
+        neg_size = int(batch_size * fraction)
+        indices = [i for i in range(batch_size)]
+        neg_ids_lig = random.choices(indices, k=neg_size)
+        neg_ids_rec = random.choices(indices, k=neg_size)
+        lig_graphs_negs = get_sub(lig_graphs, neg_ids_lig)
+        lig_coords_negs = get_sub(ligs_coords, neg_ids_lig)
+        rec_graphs_negs = get_sub(rec_graphs, neg_ids_rec)
+        recs_coords_negs = get_sub(recs_coords, neg_ids_rec)
+        all_rec_coords_negs = get_sub(all_rec_coords, neg_ids_rec)
+        pockets_coords_lig_negs = get_sub(pockets_coords_lig, neg_ids_lig)
 
-    complex_names_negs = ["NEG_SAMPLE_%s" % i for i in range(neg_size)]
+        complex_names_negs = ["NEG_SAMPLE_%s" % i for i in range(neg_size)]
 
-    if geometry_graph[0] != None:
-        geometry_graph_negs = get_sub(geometry_graph, neg_ids_lig)
-        geometry_graph = append_x(geometry_graph, geometry_graph_negs)
-    assert len(all_rec_coords) == len(recs_coords)
-    lig_graphs = append_x(lig_graphs, lig_graphs_negs)
-    rec_graphs = append_x(rec_graphs, rec_graphs_negs)
-    ligs_coords = append_x(ligs_coords, lig_coords_negs)
-    recs_coords = append_x(recs_coords, recs_coords_negs)
-    all_rec_coords = append_x(all_rec_coords, all_rec_coords_negs)
-    pockets_coords_lig = append_x(pockets_coords_lig, pockets_coords_lig_negs)
-    complex_names = append_x(complex_names, complex_names_negs)
+        if geometry_graph[0] != None:
+            geometry_graph_negs = get_sub(geometry_graph, neg_ids_lig)
+            geometry_graph = append_x(geometry_graph, geometry_graph_negs)
+        assert len(all_rec_coords) == len(recs_coords)
+        lig_graphs = append_x(lig_graphs, lig_graphs_negs)
+        rec_graphs = append_x(rec_graphs, rec_graphs_negs)
+        ligs_coords = append_x(ligs_coords, lig_coords_negs)
+        recs_coords = append_x(recs_coords, recs_coords_negs)
+        all_rec_coords = append_x(all_rec_coords, all_rec_coords_negs)
+        pockets_coords_lig = append_x(pockets_coords_lig, pockets_coords_lig_negs)
+        complex_names = append_x(complex_names, complex_names_negs)
 
     geometry_graph = dgl.batch(geometry_graph) if geometry_graph[0] != None else None
     return dgl.batch(lig_graphs), dgl.batch(

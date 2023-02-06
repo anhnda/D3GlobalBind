@@ -44,9 +44,17 @@ class D3GraphEncoder(torch.nn.Module):
                                                              d3_graph_dropout_rate).to(device)
         self.transformerEncoder = nn.TransformerEncoder(transformerEncoderLayer, num_layers=n_d3graph_layer).to(device)
 
-        self.globalFeatureLayer = nn.Linear(d_model, d_model).to(device)
-        self.globalBindingCentroid = nn.Linear(d_model, 3).to(device)
-        self.globalBindingDirection = nn.Linear(d_model, 3).to(device)
+        # self.globalFeatureLayer = nn.Linear(d_model, d_model).to(device)
+        # self.globalBindingCentroid = nn.Linear(d_model, 3).to(device)
+        # self.globalBindingDirection = nn.Linear(d_model, 3).to(device)
+
+        self.globalFeatureLayer1 = nn.Linear(d_model, d_model).to(device)
+        self.globalFeatureLayer2 = nn.Linear(d_model, d_model).to(device)
+        self.globalBindingCentroid1 = nn.Linear(d_model, d_model).to(device)
+        self.globalBindingCentroid2 = nn.Linear(d_model, 3).to(device)
+        self.globalBindingDirection1 = nn.Linear(d_model, d_model).to(device)
+        self.globalBindingDirection2 = nn.Linear(d_model, 3).to(device)
+        self.d3_act = torch.nn.ReLU()
 
     def forward(self, features, coords):
         if type(features) == list and len(features[0].shape) == 2:
@@ -72,10 +80,13 @@ class D3GraphEncoder(torch.nn.Module):
                 out_s = out[features[i].shape[0]]
                 out_selected.append(out_s)
             out_selected = torch.stack(out_selected).to(self.device)
-            globalBindingFeatures = self.globalFeatureLayer(out_selected)
-            globalBindingDirections = self.globalBindingDirection(out_selected)
-            globalBindingCentroid = self.globalBindingCentroid(out_selected)
-            return globalBindingFeatures, globalBindingDirections, globalBindingCentroid
+            # globalBindingFeatures = self.globalFeatureLayer(out_selected)
+            # globalBindingDirections = self.globalBindingDirection(out_selected)
+            # globalBindingCentroids = self.globalBindingCentroid(out_selected)
+            globalBindingFeatures = self.globalFeatureLayer2(self.d3_act(self.globalFeatureLayer1(out_selected)))
+            globalBindingCentroids = self.globalBindingCentroid2(self.d3_act(self.globalBindingCentroid1(out_selected)))
+            globalBindingDirections = self.globalBindingDirection2(self.d3_act(self.globalBindingDirection2(out_selected)))
+            return globalBindingFeatures, globalBindingDirections, globalBindingCentroids
         else:
             features = self.pad(features.t()).t()
             coords = self.pe(coords)
@@ -86,7 +97,13 @@ class D3GraphEncoder(torch.nn.Module):
 
             out_all = self.transformerEncoder(features, src_mask)
             globalInfoVector = out_all.squeeze()[-1, :]
-            globalBindingFeature = self.globalFeatureLayer(globalInfoVector)
-            globalBindingCentroid = self.globalBindingCentroid(globalInfoVector)
-            globalBindingDirection = self.globalBindingDirection(globalInfoVector)
+            #
+            # globalBindingFeature = self.globalFeatureLayer(globalInfoVector)
+            # globalBindingCentroid = self.globalBindingCentroid(globalInfoVector)
+            # globalBindingDirection = self.globalBindingDirection(globalInfoVector)
+
+            globalBindingFeature = self.globalFeatureLayer2(self.d3_act(self.globalFeatureLayer1(globalInfoVector)))
+            globalBindingCentroid = self.globalBindingCentroid2(self.d3_act(self.globalBindingCentroid1(globalInfoVector)))
+            globalBindingDirection = self.globalBindingDirection2(self.d3_act(self.globalBindingDirection1(globalInfoVector)))
+
             return globalBindingFeature, globalBindingCentroid, globalBindingDirection

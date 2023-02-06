@@ -1,7 +1,8 @@
-experiment_name: 'YourExperimentName'
+experiment_name: 'GlobalBindMSEAff'
+
+cuda_id: 'cuda:0'
 seed: 1
 data_seed: 1
-
 trainer: binding
 num_epochs: 1000000
 batch_size: 5
@@ -10,11 +11,13 @@ loss_db_step: 20
 patience: 150
 num_train:  # leave empty to use all (in param train_names below)
 num_val:  # leave empty to use all
-collate_function: graph_collate_revised
+collate_function: graph_collate_revised_negative_sampling
+
 negative_size_fraction: 1
 
 loss_func: BindingLoss
 loss_params:
+  negative_size_fraction: 1
   ot_loss_weight: 0
   key_point_alignmen_loss_weight: 0 # this does only work if ot_loss_weight is not 0
   centroid_loss_weight: 0
@@ -23,7 +26,6 @@ loss_params:
   intersection_surface_ct: 1 # grid search says 2.5
   translated_lig_kpt_ot_loss: False
   kabsch_rmsd_weight: 0
-  negative_size_fraction: 1
   negative_lambda: 0.1
   aff_weight: 1
   aff_neg_lambda : 0.3
@@ -146,7 +148,7 @@ model_parameters:
   normalize_coordinate_update: True
   rec_square_distance_scale: 10 # divide square distance by 10 to have a nicer separation instead of many 0.00000
   n_d3graph_layer: 4
-  n_d3graph_head: 5
+  n_d3graph_head: 6
   d3_graph_dropout_rate: 0.1
   d3_ff_size: 1024
   hidden_aff_dim: 200

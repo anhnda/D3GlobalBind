@@ -4,6 +4,7 @@ import sys
 from copy import deepcopy
 
 import os
+from functools import partial
 
 from dgl import load_graphs
 
@@ -126,6 +127,7 @@ def parse_arguments(arglist = None):
 
 
 def inference(args, tune_args=None):
+    # print(args)
     sys.stdout = Logger(logpath=os.path.join(os.path.dirname(args.checkpoint), f'inference.log'), syspart=sys.stdout)
     sys.stderr = Logger(logpath=os.path.join(os.path.dirname(args.checkpoint), f'inference.log'), syspart=sys.stderr)
     seed_all(args.seed)
@@ -135,13 +137,19 @@ def inference(args, tune_args=None):
         'use_rdkit_coords'] if 'use_rdkit_coords' in args.dataset_params.keys() else False
     args.dataset_params['multiple_rdkit_conformers'] = args.num_confs > 1
     args.dataset_params['num_confs'] = args.num_confs
+    print("Data test path: ", args.test_names)
     data = PDBBind(device=device, complex_names_path=args.test_names, **args.dataset_params)
     print('test size: ', len(data))
     model = load_model(args, data_sample=data[0], device=device, save_trajectories=args.save_trajectories)
     print('trainable params in model: ', sum(p.numel() for p in model.parameters() if p.requires_grad))
     batch_size = args.batch_size if args.dataset_params['use_rec_atoms'] == False else 2
+
+    # if os.path.basename(__file__).__contains__("inference"):
+    #     args.collate_params['fraction'] = 0
     collate_function = globals()[args.collate_function] if args.collate_params == {} else globals()[
         args.collate_function](**args.collate_params)
+    collate_function = partial(collate_function, fraction=0)
+    # print(collate_function)
     loader = DataLoader(data, batch_size=batch_size, collate_fn=collate_function)
 
     checkpoint = torch.load(args.checkpoint, map_location=device)
@@ -154,30 +162,36 @@ def inference(args, tune_args=None):
     for conformer_id in range(args.num_confs):
         all_ligs_coords_pred = []
         all_ligs_coords = []
-        all_ligs_keypts = []
-        all_recs_keypts = []
-        all_pocket_coords = []
+
         all_names = []
         data.conformer_id = conformer_id
         for i, batch in tqdm(enumerate(loader)):
             with torch.no_grad():
+
                 lig_graphs, rec_graphs, ligs_coords, recs_coords, all_rec_coords, pockets_coords_lig, geometry_graph, names, idx = tuple(
                     batch)
                 # if names[0] not in ['2fxs', '2iwx', '2vw5', '2wer', '2yge', ]: continue
+                neg_anchor = 0
+                for neg_anchor, n in enumerate(names):
+                    if n.startswith("NEG_SAMPLE"):
+                        break
+                # print(neg_anchor, names)
+                # exit(-1)
                 ligs_coords_pred, ligs_keypts, recs_keypts, rotations, translations, geom_reg_loss = model(lig_graphs,
                                                                                                            rec_graphs,
                                                                                                            complex_names=names,
                                                                                                            epoch=0,
                                                                                                            geometry_graph=geometry_graph.to(
                                                                                                                device) if geometry_graph != None else None)
-                for lig_coords_pred, lig_coords, lig_keypts, rec_keypts, rotation, translation, rec_pocket_coords in zip(
-                        ligs_coords_pred, ligs_coords, ligs_keypts, recs_keypts, rotations, translations,
-                        pockets_coords_lig):
+
+
+
+                for lig_coords_pred, lig_coords, rotation, translation in zip(
+                        ligs_coords_pred, ligs_coords, rotations, translations
+                        ):
                     all_ligs_coords_pred.append(lig_coords_pred.detach().cpu())
                     all_ligs_coords.append(lig_coords.detach().cpu())
-                    all_ligs_keypts.append(((rotation @ (lig_keypts).T).T + translation).detach().cpu())
-                    all_recs_keypts.append(rec_keypts.detach().cpu())
-                    all_pocket_coords.append(rec_pocket_coords.detach().cpu())
+
                 if translations == []:
                     for lig_coords_pred, lig_coords in zip(ligs_coords_pred, ligs_coords):
                         all_ligs_coords_pred.append(lig_coords_pred.detach().cpu())
@@ -187,16 +201,20 @@ def inference(args, tune_args=None):
         path = os.path.join(os.path.dirname(args.checkpoint),
                             f'predictions_Tune{tune_args != None}_RDKit{use_rdkit_coords}_confID{conformer_id}.pt')
         print(f'Saving predictions to {path}')
-        results = {'predictions': all_ligs_coords_pred, 'targets': all_ligs_coords, 'lig_keypts': all_ligs_keypts,
-                   'rec_keypts': all_recs_keypts, 'pocket_coords': all_pocket_coords, 'names': all_names}
+        results = {'predictions': all_ligs_coords_pred, 'targets': all_ligs_coords, 'names': all_names}
         torch.save(results, path)
         rmsds = []
         centroid_distsH = []
-        for i, (prediction, target, lig_keypts, rec_keypts, pocket_coords, name) in tqdm(enumerate(
-                zip(results['predictions'], results['targets'], results['lig_keypts'], results['rec_keypts'],
-                    results['pocket_coords'], results['names']))):
-            coords_pred = prediction.numpy()
-            coords_native = target.numpy()
+        # print(args)
+        normalized_radius = args.dataset_params['normalized_radius']
+        print("Normalized radius: ", normalized_radius)
+        for i, (prediction, target, name) in tqdm(enumerate(
+                zip(results['predictions'], results['targets'], results['names']))):
+            coords_pred = prediction.numpy() * normalized_radius
+            coords_native = target.numpy() * normalized_radius
+            # if i == 0:
+            #     print(coords_pred)
+            #     print(coords_native)
             rmsd = np.sqrt(np.sum((coords_pred - coords_native) ** 2, axis=1).mean())
 
             centroid_distance = np.linalg.norm(coords_native.mean(axis=0) - coords_pred.mean(axis=0))
@@ -206,7 +224,7 @@ def inference(args, tune_args=None):
         centroid_distsH = np.array(centroid_distsH)
 
         print('EquiBind-U with hydrogens inclduded in the loss')
-        print('mean rmsd: ', rmsds.mean().__round__(2), ' pm ', rmsds.std().__round__(2))
+        print('mean rmsd: ', rmsds.mean().__round__(4), ' pm ', rmsds.std().__round__(4))
         print('rmsd precentiles: ', np.percentile(rmsds, [25, 50, 75]).round(2))
         print(f'rmsds below 2: {(100 * (rmsds < 2).sum() / len(rmsds)).__round__(2)}%')
         print(f'rmsds below 5: {(100 * (rmsds < 5).sum() / len(rmsds)).__round__(2)}%')
@@ -216,99 +234,99 @@ def inference(args, tune_args=None):
         print(f'centroid_distances below 2: {(100 * (centroid_distsH < 2).sum() / len(centroid_distsH)).__round__(2)}%')
         print(f'centroid_distances below 5: {(100 * (centroid_distsH < 5).sum() / len(centroid_distsH)).__round__(2)}%')
 
-        if args.run_corrections:
-            rdkit_graphs, _ = load_graphs(
-                f'{data.processed_dir}/lig_graphs_rdkit_coords.pt')
-            kabsch_rmsds = []
-            rmsds = []
-            centroid_distances = []
-            kabsch_rmsds_optimized = []
-            rmsds_optimized = []
-            centroid_distances_optimized = []
-            for i, (prediction, target, lig_keypts, rec_keypts, name) in tqdm(enumerate(
-                    zip(results['predictions'], results['targets'], results['lig_keypts'], results['rec_keypts'],
-                        results['names']))):
-                lig = read_molecule(os.path.join('data/PDBBind/', name, f'{name}_ligand.sdf'), sanitize=True)
-                if lig == None:  # read mol2 file if sdf file cannot be sanitized
-                    lig = read_molecule(os.path.join('data/PDBBind/', name, f'{name}_ligand.mol2'), sanitize=True)
-
-                lig_rdkit = deepcopy(lig)
-                rdkit_coords = rdkit_graphs[i].ndata['new_x'].numpy()
-                conf = lig_rdkit.GetConformer()
-                for i in range(lig_rdkit.GetNumAtoms()):
-                    x, y, z = rdkit_coords[i]
-                    conf.SetAtomPosition(i, Point3D(float(x), float(y), float(z)))
-
-                lig_rdkit = RemoveHs(lig_rdkit)
-
-                lig = RemoveHs(lig)
-                lig_equibind = deepcopy(lig)
-                conf = lig_equibind.GetConformer()
-                for i in range(lig_equibind.GetNumAtoms()):
-                    x, y, z = prediction.numpy()[i]
-                    conf.SetAtomPosition(i, Point3D(float(x), float(y), float(z)))
-
-                coords_pred = lig_equibind.GetConformer().GetPositions()
-                coords_native = lig.GetConformer().GetPositions()
-                rmsdval = np.sqrt(np.sum((coords_pred - coords_native) ** 2, axis=1).mean())
-                centroid_distance = np.linalg.norm(coords_native.mean(axis=0) - coords_pred.mean(axis=0))
-                R, t = rigid_transform_Kabsch_3D(coords_pred.T, coords_native.T)
-                moved_coords = (R @ (coords_pred).T).T + t.squeeze()
-                kabsch_rmsd = np.sqrt(np.sum((moved_coords - coords_native) ** 2, axis=1).mean())
-
-                Z_pt_cloud = coords_pred
-                rotable_bonds = get_torsions([lig_rdkit])
-                new_dihedrals = np.zeros(len(rotable_bonds))
-                for idx, r in enumerate(rotable_bonds):
-                    new_dihedrals[idx] = get_dihedral_vonMises(lig_rdkit, lig_rdkit.GetConformer(), r, Z_pt_cloud)
-                optimized_mol = apply_changes(lig_rdkit, new_dihedrals, rotable_bonds)
-
-                coords_pred_optimized = optimized_mol.GetConformer().GetPositions()
-                R, t = rigid_transform_Kabsch_3D(coords_pred_optimized.T, coords_pred.T)
-                coords_pred_optimized = (R @ (coords_pred_optimized).T).T + t.squeeze()
-
-                rmsdval_optimized = np.sqrt(np.sum((coords_pred_optimized - coords_native) ** 2, axis=1).mean())
-                centroid_distance_optimized = np.linalg.norm(
-                    coords_native.mean(axis=0) - coords_pred_optimized.mean(axis=0))
-                R, t = rigid_transform_Kabsch_3D(coords_pred_optimized.T, coords_native.T)
-                moved_coords_optimized = (R @ (coords_pred_optimized).T).T + t.squeeze()
-                kabsch_rmsd_optimized = np.sqrt(np.sum((moved_coords_optimized - coords_native) ** 2, axis=1).mean())
-                kabsch_rmsds.append(kabsch_rmsd)
-                rmsds.append(rmsdval)
-                centroid_distances.append(centroid_distance)
-                kabsch_rmsds_optimized.append(kabsch_rmsd_optimized)
-                rmsds_optimized.append(rmsdval_optimized)
-                centroid_distances_optimized.append(centroid_distance_optimized)
-            kabsch_rmsds = np.array(kabsch_rmsds)
-            rmsdvals = np.array(rmsds)
-            centroid_distsU = np.array(centroid_distances)
-            kabsch_rmsds_optimized = np.array(kabsch_rmsds_optimized)
-            rmsd_optimized = np.array(rmsds_optimized)
-            centroid_dists = np.array(centroid_distances_optimized)
-            print('EquiBind-U')
-            print('mean rmsdval: ', rmsdvals.mean().__round__(2), ' pm ', rmsdvals.std().__round__(2))
-            print('rmsd precentiles: ', np.percentile(rmsdvals, [25, 50, 75]).round(2))
-            print(f'rmsdvals below 2: {(100 * (rmsdvals < 2).sum() / len(rmsdvals)).__round__(2)}%')
-            print(f'rmsdvals below 5: {(100 * (rmsdvals < 5).sum() / len(rmsdvals)).__round__(2)}%')
-            print('mean centroid: ', centroid_distsU.mean().__round__(2), ' pm ', centroid_distsU.std().__round__(2))
-            print('centroid precentiles: ', np.percentile(centroid_distsU, [25, 50, 75]).round(2))
-            print(f'centroid dist below 2: {(100 * (centroid_distsU < 2).sum() / len(centroid_distsU)).__round__(2)}%')
-            print(f'centroid dist below 5: {(100 * (centroid_distsU < 5).sum() / len(centroid_distsU)).__round__(2)}%')
-            print(f'mean kabsch RMSD: ', kabsch_rmsds.mean().__round__(2), ' pm ', kabsch_rmsds.std().__round__(2))
-            print('kabsch RMSD percentiles: ', np.percentile(kabsch_rmsds, [25, 50, 75]).round(2))
-
-            print('EquiBind')
-            print('mean rmsdval: ', rmsd_optimized.mean().__round__(2), ' pm ', rmsd_optimized.std().__round__(2))
-            print('rmsd precentiles: ', np.percentile(rmsd_optimized, [25, 50, 75]).round(2))
-            print(f'rmsdvals below 2: {(100 * (rmsd_optimized < 2).sum() / len(rmsd_optimized)).__round__(2)}%')
-            print(f'rmsdvals below 5: {(100 * (rmsd_optimized < 5).sum() / len(rmsd_optimized)).__round__(2)}%')
-            print('mean centroid: ', centroid_dists.mean().__round__(2), ' pm ', centroid_dists.std().__round__(2))
-            print('centroid precentiles: ', np.percentile(centroid_dists, [25, 50, 75]).round(2))
-            print(f'centroid dist below 2: {(100 * (centroid_dists < 2).sum() / len(centroid_dists)).__round__(2)}%')
-            print(f'centroid dist below 5: {(100 * (centroid_dists < 5).sum() / len(centroid_dists)).__round__(2)}%')
-            print(f'mean kabsch RMSD: ', kabsch_rmsds_optimized.mean().__round__(2), ' pm ',
-                  kabsch_rmsds_optimized.std().__round__(2))
-            print('kabsch RMSD percentiles: ', np.percentile(kabsch_rmsds_optimized, [25, 50, 75]).round(2))
+        # if args.run_corrections:
+        #     rdkit_graphs, _ = load_graphs(
+        #         f'{data.processed_dir}/lig_graphs_rdkit_coords.pt')
+        #     kabsch_rmsds = []
+        #     rmsds = []
+        #     centroid_distances = []
+        #     kabsch_rmsds_optimized = []
+        #     rmsds_optimized = []
+        #     centroid_distances_optimized = []
+        #     for i, (prediction, target, name) in tqdm(enumerate(
+        #             zip(results['predictions'], results['targets'],
+        #                 results['names']))):
+        #         lig = read_molecule(os.path.join('data/PDBBind/', name, f'{name}_ligand.sdf'), sanitize=True)
+        #         if lig == None:  # read mol2 file if sdf file cannot be sanitized
+        #             lig = read_molecule(os.path.join('data/PDBBind/', name, f'{name}_ligand.mol2'), sanitize=True)
+        #         lig = lig.mol
+        #         lig_rdkit = deepcopy(lig)
+        #         rdkit_coords = rdkit_graphs[i].ndata['new_x'].numpy()
+        #         conf = lig_rdkit.GetConformer()
+        #         for i in range(lig_rdkit.GetNumAtoms()):
+        #             x, y, z = rdkit_coords[i]
+        #             conf.SetAtomPosition(i, Point3D(float(x), float(y), float(z)))
+        #
+        #         lig_rdkit = RemoveHs(lig_rdkit)
+        #
+        #         lig = RemoveHs(lig)
+        #         lig_equibind = deepcopy(lig)
+        #         conf = lig_equibind.GetConformer()
+        #         for i in range(lig_equibind.GetNumAtoms()):
+        #             x, y, z = prediction.numpy()[i]
+        #             conf.SetAtomPosition(i, Point3D(float(x), float(y), float(z)))
+        #
+        #         coords_pred = lig_equibind.GetConformer().GetPositions()
+        #         coords_native = lig.GetConformer().GetPositions()
+        #         rmsdval = np.sqrt(np.sum((coords_pred - coords_native) ** 2, axis=1).mean())
+        #         centroid_distance = np.linalg.norm(coords_native.mean(axis=0) - coords_pred.mean(axis=0))
+        #         R, t = rigid_transform_Kabsch_3D(coords_pred.T, coords_native.T)
+        #         moved_coords = (R @ (coords_pred).T).T + t.squeeze()
+        #         kabsch_rmsd = np.sqrt(np.sum((moved_coords - coords_native) ** 2, axis=1).mean())
+        #
+        #         Z_pt_cloud = coords_pred
+        #         rotable_bonds = get_torsions([lig_rdkit])
+        #         new_dihedrals = np.zeros(len(rotable_bonds))
+        #         for idx, r in enumerate(rotable_bonds):
+        #             new_dihedrals[idx] = get_dihedral_vonMises(lig_rdkit, lig_rdkit.GetConformer(), r, Z_pt_cloud)
+        #         optimized_mol = apply_changes(lig_rdkit, new_dihedrals, rotable_bonds)
+        #
+        #         coords_pred_optimized = optimized_mol.GetConformer().GetPositions()
+        #         R, t = rigid_transform_Kabsch_3D(coords_pred_optimized.T, coords_pred.T)
+        #         coords_pred_optimized = (R @ (coords_pred_optimized).T).T + t.squeeze()
+        #
+        #         rmsdval_optimized = np.sqrt(np.sum((coords_pred_optimized - coords_native) ** 2, axis=1).mean())
+        #         centroid_distance_optimized = np.linalg.norm(
+        #             coords_native.mean(axis=0) - coords_pred_optimized.mean(axis=0))
+        #         R, t = rigid_transform_Kabsch_3D(coords_pred_optimized.T, coords_native.T)
+        #         moved_coords_optimized = (R @ (coords_pred_optimized).T).T + t.squeeze()
+        #         kabsch_rmsd_optimized = np.sqrt(np.sum((moved_coords_optimized - coords_native) ** 2, axis=1).mean())
+        #         kabsch_rmsds.append(kabsch_rmsd)
+        #         rmsds.append(rmsdval)
+        #         centroid_distances.append(centroid_distance)
+        #         kabsch_rmsds_optimized.append(kabsch_rmsd_optimized)
+        #         rmsds_optimized.append(rmsdval_optimized)
+        #         centroid_distances_optimized.append(centroid_distance_optimized)
+        #     kabsch_rmsds = np.array(kabsch_rmsds)
+        #     rmsdvals = np.array(rmsds)
+        #     centroid_distsU = np.array(centroid_distances)
+        #     kabsch_rmsds_optimized = np.array(kabsch_rmsds_optimized)
+        #     rmsd_optimized = np.array(rmsds_optimized)
+        #     centroid_dists = np.array(centroid_distances_optimized)
+        #     print('EquiBind-U')
+        #     print('mean rmsdval: ', rmsdvals.mean().__round__(2), ' pm ', rmsdvals.std().__round__(2))
+        #     print('rmsd precentiles: ', np.percentile(rmsdvals, [25, 50, 75]).round(2))
+        #     print(f'rmsdvals below 2: {(100 * (rmsdvals < 2).sum() / len(rmsdvals)).__round__(2)}%')
+        #     print(f'rmsdvals below 5: {(100 * (rmsdvals < 5).sum() / len(rmsdvals)).__round__(2)}%')
+        #     print('mean centroid: ', centroid_distsU.mean().__round__(2), ' pm ', centroid_distsU.std().__round__(2))
+        #     print('centroid precentiles: ', np.percentile(centroid_distsU, [25, 50, 75]).round(2))
+        #     print(f'centroid dist below 2: {(100 * (centroid_distsU < 2).sum() / len(centroid_distsU)).__round__(2)}%')
+        #     print(f'centroid dist below 5: {(100 * (centroid_distsU < 5).sum() / len(centroid_distsU)).__round__(2)}%')
+        #     print(f'mean kabsch RMSD: ', kabsch_rmsds.mean().__round__(2), ' pm ', kabsch_rmsds.std().__round__(2))
+        #     print('kabsch RMSD percentiles: ', np.percentile(kabsch_rmsds, [25, 50, 75]).round(2))
+        #
+        #     print('EquiBind')
+        #     print('mean rmsdval: ', rmsd_optimized.mean().__round__(2), ' pm ', rmsd_optimized.std().__round__(2))
+        #     print('rmsd precentiles: ', np.percentile(rmsd_optimized, [25, 50, 75]).round(2))
+        #     print(f'rmsdvals below 2: {(100 * (rmsd_optimized < 2).sum() / len(rmsd_optimized)).__round__(2)}%')
+        #     print(f'rmsdvals below 5: {(100 * (rmsd_optimized < 5).sum() / len(rmsd_optimized)).__round__(2)}%')
+        #     print('mean centroid: ', centroid_dists.mean().__round__(2), ' pm ', centroid_dists.std().__round__(2))
+        #     print('centroid precentiles: ', np.percentile(centroid_dists, [25, 50, 75]).round(2))
+        #     print(f'centroid dist below 2: {(100 * (centroid_dists < 2).sum() / len(centroid_dists)).__round__(2)}%')
+        #     print(f'centroid dist below 5: {(100 * (centroid_dists < 5).sum() / len(centroid_dists)).__round__(2)}%')
+        #     print(f'mean kabsch RMSD: ', kabsch_rmsds_optimized.mean().__round__(2), ' pm ',
+        #           kabsch_rmsds_optimized.std().__round__(2))
+        #     print('kabsch RMSD percentiles: ', np.percentile(kabsch_rmsds_optimized, [25, 50, 75]).round(2))
 
 
 def inference_from_files(args):
@@ -447,7 +465,6 @@ def inference_from_files(args):
 
 if __name__ == '__main__':
     args, cmdline_args = parse_arguments()
-
     if args.config:
         config_dict = yaml.load(args.config, Loader=yaml.FullLoader)
         arg_dict = args.__dict__
@@ -477,6 +494,8 @@ if __name__ == '__main__':
                         arg_dict[key].append(v)
                 else:
                     arg_dict[key] = value
+
+
         args.model_parameters['noise_initial'] = 0
         if args.inference_path == None:
             inference(args)
