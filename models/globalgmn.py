@@ -480,9 +480,12 @@ class IEGMN_Layer(nn.Module):
             cross_attention_lig_feat = cross_attention(self.att_mlp_Q_lig(h_feats_lig_norm),
                                                        self.att_mlp_K(h_feats_rec_norm),
                                                        self.att_mlp_V(h_feats_rec_norm), mask, self.cross_msgs)
+            maskt = None
+            if mask is not None:
+                maskt = mask.transpose(0, 1)
             cross_attention_rec_feat = cross_attention(self.att_mlp_Q(h_feats_rec_norm),
                                                        self.att_mlp_K_lig(h_feats_lig_norm),
-                                                       self.att_mlp_V_lig(h_feats_lig_norm), mask.transpose(0, 1),
+                                                       self.att_mlp_V_lig(h_feats_lig_norm),maskt ,
                                                        self.cross_msgs)
             cross_attention_lig_feat = apply_norm(lig_graph, cross_attention_lig_feat, self.final_h_layer_norm,
                                                   self.final_h_layernorm_layer)

@@ -151,8 +151,12 @@ class Trainer():
                     aff_l = "unk"
                 else:
                     aff_l = loss_components['aff_loss'].data
+                if type(loss_components['intersection_loss']) is not torch.Tensor:
+                    intersection_l= "unk"
+                else:
+                    intersection_l = loss_components['intersection_loss'].data
                 print("Loss@", i, loss.data, loss_components['ligs_coords_loss'].data, aff_l,
-                      loss_components['intersection_loss'].data)
+                      intersection_l)
 
             with torch.no_grad():
                 if loss_components != None and i == 0:  # add loss_component keys to total_metrics

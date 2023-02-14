@@ -185,7 +185,7 @@ def inference(args, tune_args=None):
                                                                                                                device) if geometry_graph != None else None)
 
 
-
+                # print(ligs_keypts)
                 for lig_coords_pred, lig_coords, rotation, translation in zip(
                         ligs_coords_pred, ligs_coords, rotations, translations
                         ):
