@@ -36,6 +36,7 @@ from trainer.trainer import Trainer
 import faulthandler
 
 faulthandler.enable()
+C_DIR = os.path.dirname(os.path.realpath(__file__))
 
 
 def parse_arguments():
@@ -151,7 +152,9 @@ def train_wrapper(args):
 
 def train(args, run_dir):
     seed_all(args.seed)
-
+    # seed_all(101)
+    from commons.func import copy_dir
+    copy_dir(C_DIR, run_dir, exclusive2=["data", "runs", "*.zip", "logs"])
     device = torch.device(args.cuda_id if torch.cuda.is_available() and args.device == 'cuda' else "cpu")
     metrics_dict = {'rsquared': Rsquared(),
                     'mean_rmsd': RMSD(),

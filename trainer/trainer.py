@@ -1,4 +1,5 @@
 import copy
+import gc
 import inspect
 import os
 import shutil
@@ -127,12 +128,24 @@ class Trainer():
         if optim != None:  # run backpropagation if an optimizer is provided
             loss.backward()
             if self.args.clip_grad != None:
-                torch.nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=self.args.clip_grad, norm_type=2)
+                torch.nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=self.args.clip_grad, norm_type=2, error_if_nonfinite=True)
+
+
             self.optim.step()
             self.after_optim_step()  # overwrite this function to do stuff before zeroing out grads
             self.optim.zero_grad()
             self.optim_steps += 1
-        return loss, loss_components, list_detach(predictions), list_detach(targets)
+        loss2 = loss.detach()
+        loss_components2 = loss_components
+        predictions2 = list_detach(predictions)
+        targets2 = list_detach(targets)
+        del loss
+        del loss_components
+        del predictions
+        del targets
+        gc.collect()
+        return loss2, loss_components2, predictions2, targets2
+
 
     def predict(self, data_loader: DataLoader, optim: torch.optim.Optimizer = None, return_pred=False):
         total_metrics = {k: 0 for k in
@@ -142,10 +155,18 @@ class Trainer():
         epoch_predictions = []
         epoch_loss = 0
         for i, batch in enumerate(data_loader):
+            # if self.epoch == 21 and i % len(data_loader) > 2000:
+            #     print("Skip iter ")
+            #     continue
             *batch, batch_indices = move_to_device(list(batch), self.device)
             # loss components is either none, or a dict with the components of the loss function
             # print("Process Batch")
-            loss, loss_components, predictions, targets = self.process_batch(batch, optim)
+            re = self.process_batch(batch, optim)
+            if re is None:
+                log("Skip non fininte grad")
+                continue
+
+            loss, loss_components, predictions, targets = re
             if i % self.hparams['loss_db_step'] == 0:
                 if type(loss_components['aff_loss']) is int:
                     aff_l = "unk"
@@ -179,6 +200,10 @@ class Trainer():
                     epoch_targets.extend(targets if isinstance(targets, list) else [targets])
                     epoch_predictions.extend(predictions if isinstance(predictions, list) else [predictions])
                 self.after_batch(predictions, targets, batch_indices)
+                del loss
+                del loss_components
+                del predictions
+                del targets
         if optim == None:
             loader_len = len(data_loader) if len(data_loader) != 0 else 1
             if self.val_per_batch:

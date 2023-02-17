@@ -21,7 +21,17 @@ def getCurrentTimeString(no_space=True):
 def ensure_dir(directory):
     if not os.path.exists(directory):
         os.makedirs(directory)
+def copy_dir(c_dir, target_dir, exclusives=[".git", "tmp", ".idea", "__pycache__"], exclusive2=[]):
 
+    if len(exclusive2) > 0:
+        for e in exclusive2:
+            exclusives.append(e)
+    # command = "cp -R \"%s\"  \"%s\"" % (c_dir, target_dir)
+    ex = " ".join(["--exclude \"%s\"" % v for v in exclusives])
+    command = "rsync -a  \"%s\"  \"%s\" %s" % (c_dir, target_dir, ex)
+    ensure_dir(target_dir)
+    print("Cmd: ", command)
+    os.system(command)
 
 def convertHexToBinString888(hexString):
     # scale = 16  ## equals to hexadecimal

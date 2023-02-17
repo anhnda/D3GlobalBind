@@ -1,9 +1,14 @@
-experiment_name: 'GlobMSEBaseLineNewDataSplitTLayerPEL'
+# experiment_name: 'GlobMSEBaseLineNewDataSplitTLayerPEL'
 # experiment_name: 'EQMSEBaseLineNewDataSplitTNoCross'
+experiment_name: 'TransBindingC_AllAT'
 
+# model_type: 'GlobalBind'
+# model_type: 'EquiBind'
+# model_type: 'TransBinding'
+model_type: 'TransBindingC'
 
 cuda_id: 'cuda:1'
-seed: 1
+seed: 101
 data_seed: 1
 trainer: binding
 num_epochs: 1000000
@@ -96,17 +101,16 @@ clip_grad: 100 # leave empty for no grad clip
 scheduler_step_per_batch: False
 lr_scheduler:  ReduceLROnPlateau # leave empty to use none
 lr_scheduler_params:
-  factor: 0.6
+  factor: 0.1
   patience: 60
-  min_lr: 8.0e-6
-  mode: 'max'
+  min_lr: 1.0e-7
+  mode: 'min'
   verbose: True
 
 
 
 # Model parameters
-model_type: 'GlobalBind'
-# model_type: 'EquiBind'
+
 model_parameters:
   geometry_reg_step_size: 0.001
   geometry_regularization: False
@@ -131,8 +135,8 @@ model_parameters:
   noise_initial: 1
   use_edge_features_in_gmn: True
   use_mean_node_features: True
-  residue_emb_dim: 360
-  iegmn_lay_hid_dim: 360
+  residue_emb_dim: 117
+  iegmn_lay_hid_dim: 117
   num_att_heads: 30 # 20 ic  good run
   dropout: 0.1
   nonlin: 'lkyrelu' # ['swish', 'lkyrelu']
@@ -152,12 +156,12 @@ model_parameters:
   num_lig_feats:  # leave as None to use all ligand features. Have a look at lig_feature_dims in process_mols.py to see what features we are talking about. If this is 1, only the first of those will be used.
   normalize_coordinate_update: True
   rec_square_distance_scale: 10 # divide square distance by 10 to have a nicer separation instead of many 0.00000
-  n_d3graph_layer: 5
-  n_d3graph_head: 8
+  n_d3graph_layer: 3
+  n_d3graph_head: 6
   d3_graph_dropout_rate: 0.1
   d3_ff_size: 2048
   hidden_aff_dim: 200
   batch_d3: False
 eval_on_test: False
 # continue training from checkpoint:
-#checkpoint: runs/path_to_the_experiment/last_checkpoint.pt
+# checkpoint: runs/RDKitCoords_flexible_self_docking_TransBinding_AllAT_layers6_bs5_otL0_iL0_dim120_nAttH30_normBN_normc0_normf0_recAtomsFalse_numtrainNone_date15-02_time18-36-36.334823/last_checkpoint.pt

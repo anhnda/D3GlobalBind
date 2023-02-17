@@ -70,6 +70,17 @@ def compute_revised_intersection_loss(lig_coords, rec_coords, alpha=0.2, beta=8,
     return distance_losses.sum()
 
 
+def detach_(v):
+    if type(v) is not torch.Tensor:
+        return v
+    return v.detach().cpu()
+
+def detach_dict(d):
+    d2 = {}
+    for k, v in d.items():
+        d2[k] = detach_(v)
+    return d2
+
 class BindingLoss(_Loss):
     def __init__(self, ot_loss_weight=1, intersection_loss_weight=0, intersection_sigma=0, geom_reg_loss_weight=0,
                  loss_rescale=True,
@@ -199,11 +210,14 @@ class BindingLoss(_Loss):
             geom_reg_loss = geom_reg_loss / float(len(ligs_coords_pred))
 
         loss = ligs_coords_loss + self.aff_weight * aff_loss + self.ot_loss_weight * ot_loss + self.intersection_loss_weight * intersection_loss + keypts_loss * self.key_point_alignmen_loss_weight + centroid_loss * self.centroid_loss_weight + kabsch_rmsd_loss * self.kabsch_rmsd_weight + intersection_loss_revised * self.revised_intersection_loss_weight + geom_reg_loss * self.geom_reg_loss_weight
-        return loss, {'ligs_coords_loss': ligs_coords_loss, 'aff_loss': aff_loss, 'recs_coords_loss': recs_coords_loss,
+        return loss, detach_dict({'ligs_coords_loss': ligs_coords_loss, 'aff_loss': aff_loss,
+                      'recs_coords_loss': recs_coords_loss,
                       'ot_loss': ot_loss,
                       'intersection_loss': intersection_loss, 'keypts_loss': keypts_loss,
                       'centroid_loss:': centroid_loss, 'kabsch_rmsd_loss': kabsch_rmsd_loss,
-                      'intersection_loss_revised': intersection_loss_revised, 'geom_reg_loss': geom_reg_loss}
+                      'intersection_loss_revised': intersection_loss_revised, 'geom_reg_loss': geom_reg_loss})
+
+
 
 
 class TorsionLoss(_Loss):
