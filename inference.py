@@ -26,7 +26,7 @@ from datasets.pdbbind import PDBBind
 from commons.utils import seed_all, read_strings_from_txt
 
 import yaml
-
+from commons import func
 from datasets.custom_collate import *  # do not remove
 from models import *  # do not remove
 from torch.nn import *  # do not remove
@@ -41,11 +41,12 @@ from trainer.metrics import Rsquared, MeanPredictorLoss, MAE, PearsonR, RMSD, RM
 
 # turn on for debugging C code like Segmentation Faults
 import faulthandler
+import shutil
 
 faulthandler.enable()
 
 
-def parse_arguments(arglist = None):
+def parse_arguments(arglist=None):
     p = argparse.ArgumentParser()
     p.add_argument('--config', type=argparse.FileType(mode='r'), default='configs_clean/inference.yml')
     p.add_argument('--checkpoint', type=str, help='path to .pt file in a checkpoint directory')
@@ -113,7 +114,7 @@ def parse_arguments(arglist = None):
     p.add_argument('--num_confs', type=int, default=1, help='num_confs if using rdkit conformers')
     p.add_argument('--use_rdkit_coords', action="store_true",
                    help='override the rkdit usage behavior of the used model')
-    p.add_argument('--no_use_rdkit_coords', action="store_false", dest = "use_rdkit_coords",
+    p.add_argument('--no_use_rdkit_coords', action="store_false", dest="use_rdkit_coords",
                    help='override the rkdit usage behavior of the used model')
 
     cmdline_parser = deepcopy(p)
@@ -122,8 +123,19 @@ def parse_arguments(arglist = None):
     cmdline_parser.set_defaults(**clear_defaults)
     cmdline_parser._defaults = {}
     cmdline_args = cmdline_parser.parse_args(arglist)
-    
+
     return args, cmdline_args
+
+
+def detach_np(x):
+    try:
+        return x.cpu().numpy()
+    except:
+        return x
+
+
+def detach_lnp(xs):
+    return [detach_np(x) for x in xs]
 
 
 def inference(args, tune_args=None):
@@ -159,12 +171,18 @@ def inference(args, tune_args=None):
     model.to(device)
     model.eval()
 
+    saving_dir = os.path.dirname(args.checkpoint)
+    predicted_structure_dir = "%s/predicted_3d" % saving_dir
+
+    func.ensure_dir(predicted_structure_dir)
+    data_dir = "data/PDBBind"
     for conformer_id in range(args.num_confs):
         all_ligs_coords_pred = []
         all_ligs_coords = []
 
         all_names = []
         data.conformer_id = conformer_id
+        d_name_map = dict()
         for i, batch in tqdm(enumerate(loader)):
             with torch.no_grad():
 
@@ -183,12 +201,34 @@ def inference(args, tune_args=None):
                                                                                                            epoch=0,
                                                                                                            geometry_graph=geometry_graph.to(
                                                                                                                device) if geometry_graph != None else None)
+                lig_graphs = dgl.unbatch(lig_graphs)
+                # print(len(lig_graphs), type(lig_graphs))
 
+                if args.save_predicted_ligs:
+                    for rotation, translation, lig_graph, name in zip(rotations, translations, lig_graphs, names):
+                        lig_path = "%s/%s/%s_ligand.sdf" % (data_dir, name, name)
+                        mol = func.read_mol(lig_path)
+                        rot_T, rot_b, mean_to_remove = detach_lnp(
+                            [lig_graph.ndata['x_T'][0], lig_graph.ndata['x_b'][0], lig_graph.ndata['x_m'][0]])
+                        rot_b = rot_b * 1500
+                        # print(type(rot_T), type(rot_b), type(mean_to_remove))
+                        mean_to_remove = mean_to_remove * 1500
+                        mol = func.trans_mol(mol, rot_T, rot_b, m=mean_to_remove)
+                        rotation, translation = detach_lnp([rotation, translation])
+                        mol = func.trans_mol(mol, rotation, translation * 1500)
+                        path_to_save = "%s/%s_ligand_p.sdf" % (predicted_structure_dir, name)
+                        d_name_map[name] = path_to_save
+                        func.save_mol_sdf(mol, path_to_save)
+                        if args.copy_true_ligs:
+                            shutil.copy(lig_path, "%s/%s_ligand_true.sdf" % (predicted_structure_dir, name))
+                        if args.copy_proteins:
+                            shutil.copy("%s/%s/%s_protein_processed.pdb" % (data_dir, name, name),
+                                        "%s/%s_protein_processed.pdb" % (predicted_structure_dir, name))
 
                 # print(ligs_keypts)
                 for lig_coords_pred, lig_coords, rotation, translation in zip(
                         ligs_coords_pred, ligs_coords, rotations, translations
-                        ):
+                ):
                     all_ligs_coords_pred.append(lig_coords_pred.detach().cpu())
                     all_ligs_coords.append(lig_coords.detach().cpu())
 
@@ -220,6 +260,8 @@ def inference(args, tune_args=None):
             centroid_distance = np.linalg.norm(coords_native.mean(axis=0) - coords_pred.mean(axis=0))
             centroid_distsH.append(centroid_distance)
             rmsds.append(rmsd)
+            pth = d_name_map[name]
+            shutil.move(pth, "%s_%s.sdf" % (pth[:-4], rmsd))
         rmsds = np.array(rmsds)
         centroid_distsH = np.array(centroid_distsH)
 
@@ -345,7 +387,8 @@ def inference_from_files(args):
     dp = args.dataset_params
     use_rdkit_coords = args.use_rdkit_coords if args.use_rdkit_coords != None else args.dataset_params[
         'use_rdkit_coords']
-    names = os.listdir(args.inference_path) if args.inference_path != None else tqdm(read_strings_from_txt('data/timesplit_test'))
+    names = os.listdir(args.inference_path) if args.inference_path != None else tqdm(
+        read_strings_from_txt('data/timesplit_test'))
     for idx, name in enumerate(names):
         print(f'\nProcessing {name}: complex {idx + 1} of {len(names)}')
         file_names = os.listdir(os.path.join(args.inference_path, name))
@@ -494,7 +537,6 @@ if __name__ == '__main__':
                         arg_dict[key].append(v)
                 else:
                     arg_dict[key] = value
-
 
         args.model_parameters['noise_initial'] = 0
         if args.inference_path == None:

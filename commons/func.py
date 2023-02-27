@@ -6,6 +6,52 @@ import joblib
 import os
 import time
 
+from rdkit import Chem
+
+def read_mol(molecule_file):
+    mol = None
+    if molecule_file.endswith('.sdf'):
+
+        supplier = Chem.SDMolSupplier(molecule_file, sanitize=False, removeHs=False)
+        mol = supplier[0]
+    else:
+        print("File error")
+    return mol
+
+
+
+def trans_mol(mol, r, t, m = 0):
+    # return mol
+    # print("TPM" , type(mol), type(r), type(t), type(m))
+    conf = mol.GetConformer()
+    mol_coords = conf.GetPositions()
+    # print(mol_coords)
+    mol_coords = mol_coords - m
+    new_coords = (r @ mol_coords.transpose()).transpose() + t
+    # print(new_coords)
+    for i in range(mol.GetNumAtoms()):
+        conf.SetAtomPosition(i, (new_coords[i][0],new_coords[i][1],new_coords[i][2]))
+
+    # writer = Chem.SDWriter('x.sdf')
+    # for cid in range(mol.GetNumConformers()):
+    #     mol.SetProp('ID', f'x_{cid}')
+    #     writer.write(mol, confId=cid)
+    # writer.close()
+
+    return mol
+
+def save_mol_sdf(mol, path):
+    writer = Chem.SDWriter(path)
+    writer.SetKekulize(False)
+    # print(path)
+    for cid in range(mol.GetNumConformers()):
+
+        mol.SetProp('ID', f'x_{cid}')
+        # if mol is not None: Chem.Kekulize(mol, clearAromaticFlags=True)
+        writer.write(mol, confId=cid)
+
+
+    writer.close()
 
 def getCurrentTimeString(no_space=True):
     t = time.localtime()

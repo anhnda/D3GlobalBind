@@ -489,7 +489,6 @@ class D3GPairTransformer2(torch.nn.Module):
         return globalBindingFeature2, globalBindingFeature1, globalBindingCentroid2, globalBindingCentroid1, globalBindingDirection2, globalBindingDirection1
 
 
-
 class D3GPairTransformerC(torch.nn.Module):
     def __init__(self, d_model=512, n_d3graph_layer=5, n_d3graph_head=5, d3_ff_size=2048, d3_graph_dropout_rate=0.1,
                  device=None):
@@ -620,3 +619,107 @@ class D3GPairTransformerC(torch.nn.Module):
         del pe_feature_lig
         del pe_feature_pro
         return globalBindingFeature2, globalBindingFeature1, globalBindingCentroid2, globalBindingCentroid1, globalBindingDirection2, globalBindingDirection1
+
+
+class D3GPairTransformerPX(torch.nn.Module):
+    def __init__(self, d_model=512, n_d3graph_layer=5, n_d3graph_head=5, d3_ff_size=2048, d3_graph_dropout_rate=0.1,
+                 device=None):
+        super(D3GPairTransformerPX, self).__init__()
+        self.d_model = d_model
+        self.n_layer = n_d3graph_layer
+        self.dropout_rate = d3_graph_dropout_rate
+        self.device = device
+        self.pads = [nn.ConstantPad1d((0, i), 0) for i in range(1, 10)]
+
+        self.fe0 = torch.rand((10, d_model), requires_grad=True).to(device)
+        self.pe = D3PositionalEncoderC(d_model, device).to(device)
+
+        self.transformer1 = nn.Transformer(d_model=d_model, nhead=n_d3graph_head, dim_feedforward=d3_ff_size,
+                                           dropout=d3_graph_dropout_rate).to(device)
+
+        self.transformer2 = nn.Transformer(d_model=d_model, nhead=n_d3graph_head, dim_feedforward=d3_ff_size,
+                                           dropout=d3_graph_dropout_rate).to(device)
+        self.dropout = nn.Dropout(d3_graph_dropout_rate)
+
+        # self.globalFeatureLayer = nn.Linear(d_model, d_model).to(device)
+        # self.globalBindingCentroid = nn.Linear(d_model, 3).to(device)
+        # self.globalBindingDirection = nn.Linear(d_model, 3).to(device)
+
+        # self.globalFeatureLayer1 = nn.Linear(d_model, d_model * 2).to(device)
+        # self.globalFeatureLayer2 = nn.Linear(d_model * 2, d_model).to(device)
+
+        # self.globalFeatureLayer12 = nn.Linear(d_model, d_model * 2).to(device)
+        # self.globalFeatureLayer22 = nn.Linear(d_model * 2, d_model).to(device)
+        self.globalBindingCentroid1 = nn.Linear(d_model, d_model * 2).to(device)
+        self.globalBindingCentroid2 = nn.Linear(d_model * 2, 3).to(device)
+
+        # self.globalBindingCentroid12 = nn.Linear(d_model, d_model * 2).to(device)
+        # self.globalBindingCentroid22 = nn.Linear(d_model * 2, 3).to(device)
+
+        # self.globalBindingDirection1 = nn.Linear(d_model, d_model * 2).to(device)
+        # self.globalBindingDirection2 = nn.Linear(d_model * 2, 3).to(device)
+
+        # self.globalBindingDirection12 = nn.Linear(d_model, d_model * 2).to(device)
+        # self.globalBindingDirection22 = nn.Linear(d_model * 2, 3).to(device)
+        # self.d3_act = torch.nn.ReLU()
+        self.d3_act = torch.nn.LeakyReLU()
+
+    def pad_x(self, x, n_padding=0, learn_pad=False):
+        if learn_pad:
+            assert n_padding > 0
+            return torch.cat([x, self.fe0[:n_padding, :]], dim=0)
+        else:
+            pad = None
+            if n_padding > 0:
+                pad = self.pads[n_padding - 1]
+
+            if pad is not None:
+                x = pad(x.t()).t()
+
+        return x
+
+    def mix_pe_feature(self, features, coords, n_padding=0, learn_pad=False):
+
+        features = self.pad_x(features, n_padding, learn_pad)
+        coords = self.pe(coords, n_padding)
+
+        pe_features = torch.cat([features, coords], dim=1)
+        del features
+        del coords
+        return pe_features
+
+    def forward1(self, pe_feature_pro, pe_feature_lig, n_pad_tgt):
+        src_mask = torch.zeros((pe_feature_pro.shape[0], pe_feature_pro.shape[0]), device=self.device).type(torch.bool)
+        tgt_mask = torch.zeros((pe_feature_lig.shape[0], pe_feature_lig.shape[0]), device=self.device).type(torch.bool)
+        for i in range(1, n_pad_tgt + 1):
+            for j in range(1, n_pad_tgt + 1):
+                if i != j:
+                    tgt_mask[-i, -j] = True
+        out = self.transformer1(pe_feature_pro, pe_feature_lig, src_mask=src_mask, tgt_mask=tgt_mask)
+        out = torch.squeeze(out)
+
+        predictedPosition = self.globalBindingCentroid2(
+            self.d3_act(self.globalBindingCentroid1(out)))
+
+        del src_mask
+        del tgt_mask
+        del out
+        return predictedPosition
+
+    def forward(self, features_pro, coords_pro, features_lig, coords_lig):
+        n_pad = 0
+
+        pe_feature_pro = self.mix_pe_feature(features_pro, coords_pro, n_padding=n_pad, learn_pad=False)
+        pe_feature_lig = self.mix_pe_feature(features_lig, coords_lig, n_padding=n_pad, learn_pad=False)
+
+        pe_feature_pro = torch.unsqueeze(pe_feature_pro, 1).to(self.device)
+        pe_feature_lig = torch.unsqueeze(pe_feature_lig, 1).to(self.device)
+        pe_feature_pro = self.dropout(pe_feature_pro)
+        pe_feature_lig = self.dropout(pe_feature_lig)
+
+        predictedPositions = self.forward1(pe_feature_pro,pe_feature_lig, n_pad)
+
+
+        del pe_feature_lig
+        del pe_feature_pro
+        return predictedPositions

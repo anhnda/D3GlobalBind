@@ -1,12 +1,13 @@
 # experiment_name: 'GlobMSEBaseLineNewDataSplitTLayerPEL'
 # experiment_name: 'EQMSEBaseLineNewDataSplitTNoCross'
-experiment_name: 'TransBindingC_AllAT'
+# experiment_name: 'TransBindingC_AllAT'
+experiment_name: 'TransBindingCPX'
 
 # model_type: 'GlobalBind'
 # model_type: 'EquiBind'
 # model_type: 'TransBinding'
-model_type: 'TransBindingC'
-
+# model_type: 'TransBindingC'
+model_type: 'TransBindingPX'
 cuda_id: 'cuda:1'
 seed: 101
 data_seed: 1

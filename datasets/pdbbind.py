@@ -223,6 +223,10 @@ class PDBBind(Dataset):
         mean_to_remove = lig_coords_to_move.mean(dim=0, keepdims=True)
         lig_graph.ndata['new_x'] = (rot_T @ (lig_coords_to_move - mean_to_remove).T).T + rot_b
         new_pocket_coords = (rot_T @ (pocket_coords - mean_to_remove).T).T + rot_b
+        n_nodes = len(lig_coords_to_move)
+        lig_graph.ndata['x_T'] = rot_T.expand((n_nodes,) + tuple(rot_T.shape))
+        lig_graph.ndata['x_b'] = rot_b.expand((n_nodes,) + tuple(rot_b.shape))
+        lig_graph.ndata['x_m'] = mean_to_remove.expand((n_nodes,) + tuple(mean_to_remove.shape))
 
         if self.subgraph_augmentation and self.is_train_data:
             with torch.no_grad():
@@ -253,6 +257,7 @@ class PDBBind(Dataset):
             return lig_graph.to(self.device), rec_graph.to(self.device), self.masks[idx], self.angles[idx], lig_coords, \
                    rec_graph.ndata['x'], new_pocket_coords, pocket_coords, geometry_graph, self.complex_names[idx], idx
         else:
+
             return lig_graph.to(self.device), rec_graph.to(self.device), lig_coords, rec_graph.ndata[
                 'x'], new_pocket_coords, pocket_coords, geometry_graph, self.complex_names[idx], idx
 
