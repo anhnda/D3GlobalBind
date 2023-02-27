@@ -7,8 +7,10 @@ Main points:
 1. Runable on computer with small size of memory (<64 GB) by using disk cache
 2. Allow to test different strategies for global feature learning by changing
 model_type in the configuration files at configs_clean/RDKitCoords_flexible_self_docking
+   e.g. model_type: TransBindCX # for a simple transformer based global feature.
 
-
+## Todo:
+1. Finding a better global feature modules
 
 # Dataset
 
